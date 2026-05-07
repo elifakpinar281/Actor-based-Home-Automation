@@ -13,11 +13,7 @@ import org.apache.pekko.actor.typed.receptionist.Receptionist;
 import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 import java.util.Optional;
-
 public class WeatherSensor extends AbstractBehavior<EnvironmentActor.WeatherSensorNotification> {
-    public static final ServiceKey<EnvironmentActor.WeatherSensorNotification> WEATHER_SENSOR_KEY =
-            ServiceKey.create(EnvironmentActor.WeatherSensorNotification.class, "weatherSensor");
-
     public record ReadWeather(ActorRef<WeatherReading> replyTo) implements EnvironmentActor.WeatherSensorNotification {}
     public record WeatherReading(Optional<WeatherCondition> condition) {}
 
@@ -27,20 +23,22 @@ public class WeatherSensor extends AbstractBehavior<EnvironmentActor.WeatherSens
         return Behaviors.setup(context -> new WeatherSensor(context, environmentActor));
     }
 
-
-    private WeatherSensor(ActorContext<EnvironmentActor.WeatherSensorNotification> context, ActorRef<EnvironmentActor.EnvironmentCommand> environmentActor) {
+    private WeatherSensor(ActorContext<EnvironmentActor.WeatherSensorNotification> context,
+                          ActorRef<EnvironmentActor.EnvironmentCommand> environmentActor) {
         super(context);
         this.lastReading = null;
+        context.getSystem().receptionist().tell(Receptionist.register(EnvironmentActor.WEATHER_SENSOR_SERVICE_KEY, context.getSelf()));
 
-        context.getSystem().receptionist().tell(Receptionist.register(WEATHER_SENSOR_KEY, context.getSelf()));
         environmentActor.tell(new EnvironmentActor.RegisterWeatherSensor(context.getSelf()));
-        getContext().getLog().info("WeatherSensor started and registered with environment");
+        getContext().getLog().info("WeatherSensor started and registered via Receptionist");
     }
 
     @Override
     public Receive<EnvironmentActor.WeatherSensorNotification> createReceive() {
         return newReceiveBuilder()
-                .onMessage(EnvironmentActor.WeatherSensorNotification.EnvironmentWeatherChanged.class, this::onEnvironmentWeatherChanged)
+                .onMessage(
+                        EnvironmentActor.WeatherSensorNotification.EnvironmentWeatherChanged.class,
+                        this::onEnvironmentWeatherChanged)
                 .onMessage(ReadWeather.class, this::onReadWeather)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
@@ -49,7 +47,6 @@ public class WeatherSensor extends AbstractBehavior<EnvironmentActor.WeatherSens
     private Behavior<EnvironmentActor.WeatherSensorNotification> onEnvironmentWeatherChanged(EnvironmentActor.WeatherSensorNotification.EnvironmentWeatherChanged update) {
         this.lastReading = update.condition();
         getContext().getLog().info("WeatherSensor measured: {}", lastReading);
-        // TODO: Forward weather condition to actuators (Blinds) via Receptionist
         return this;
     }
 
@@ -63,4 +60,3 @@ public class WeatherSensor extends AbstractBehavior<EnvironmentActor.WeatherSens
         return this;
     }
 }
-

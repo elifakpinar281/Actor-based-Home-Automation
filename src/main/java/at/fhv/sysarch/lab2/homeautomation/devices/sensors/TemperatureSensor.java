@@ -14,13 +14,12 @@ import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 import java.util.Optional;
 
+import static at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentActor.TEMPERATURE_SENSOR_SERVICE_KEY;
+
 public class TemperatureSensor extends AbstractBehavior<EnvironmentActor.TemperatureSensorNotification> {
-    public static final ServiceKey<EnvironmentActor.TemperatureSensorNotification> TEMPERATURE_SENSOR_KEY =
-            ServiceKey.create(EnvironmentActor.TemperatureSensorNotification.class, "temperatureSensor");
-
     public record ReadTemperature(ActorRef<TemperatureReading> replyTo) implements EnvironmentActor.TemperatureSensorNotification {}
-
     public record TemperatureReading(Optional<Temperature> temperature) {}
+
     private Temperature lastReading;
 
     public static Behavior<EnvironmentActor.TemperatureSensorNotification> create(ActorRef<EnvironmentActor.EnvironmentCommand> environmentActor) {
@@ -30,9 +29,9 @@ public class TemperatureSensor extends AbstractBehavior<EnvironmentActor.Tempera
     private TemperatureSensor(ActorContext<EnvironmentActor.TemperatureSensorNotification> context, ActorRef<EnvironmentActor.EnvironmentCommand> environmentActor) {
         super(context);
         this.lastReading = null;
-        context.getSystem().receptionist().tell(Receptionist.register(TEMPERATURE_SENSOR_KEY, context.getSelf()));
+        context.getSystem().receptionist().tell(Receptionist.register(TEMPERATURE_SENSOR_SERVICE_KEY, context.getSelf()));
         environmentActor.tell(new EnvironmentActor.RegisterTemperatureSensor(context.getSelf()));
-        getContext().getLog().info("TemperatureSensor started and registered with environment");
+        getContext().getLog().info("TemperatureSensor started and registered via Receptionist");
     }
 
     @Override
