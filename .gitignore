@@ -1,0 +1,66 @@
+# Compiled class files
+*.class
+
+# Log files
+*.log
+logs/
+
+# Package files
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+
+# Gradle files
+.gradle/
+build/
+**/build/
+# keep the wrapper jar if present
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+out/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# VS Code
+.vscode/
+
+# Generated sources (e.g. protobuf, annotation processors)
+build/generated/
+**/generated/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+Icon?
+
+# Editor temporary files
+*~
+*.swp
+*.swo
+
+# Security / local properties
+local.properties
+credentials.properties
+secrets.properties
+*.jks
+*.keystore
+
+# Misc
+coverage/
+.recommenders/
+
+# End of file
+
