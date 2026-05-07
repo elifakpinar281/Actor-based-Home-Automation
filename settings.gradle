@@ -4,4 +4,4 @@ pluginManagement {
         mavenCentral()
     }
 }
-rootProject.name = 'Lab2Template'
+rootProject.name = 'Actor-based-Home-Automation'

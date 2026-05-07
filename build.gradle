@@ -31,6 +31,7 @@ ext {
     h2Version = "2.4.240"
     logbackVersion = "1.5.18"
     junitVersion = "5.9.2"
+    jacksonVersion = "2.15.2"
 }
 
 dependencies {
@@ -45,10 +46,14 @@ dependencies {
     implementation "org.apache.pekko:pekko-persistence-typed_3:$pekkoVersion"
     implementation "org.apache.pekko:pekko-persistence-jdbc_3:$pekkoVersion"
     implementation "org.apache.pekko:pekko-persistence-query_3:$pekkoVersion"
+    implementation "org.apache.pekko:pekko-http-jackson_3:$pekkoVersion"
+
 
     implementation "org.eclipse.paho:org.eclipse.paho.client.mqttv3:$mqttVersion"
     implementation "com.h2database:h2:$h2Version"
     implementation "ch.qos.logback:logback-classic:$logbackVersion"
+    implementation "com.fasterxml.jackson.core:jackson-databind:$jacksonVersion"
+
 
     testImplementation "org.junit.jupiter:junit-jupiter-api:$junitVersion"
     testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:$junitVersion"
