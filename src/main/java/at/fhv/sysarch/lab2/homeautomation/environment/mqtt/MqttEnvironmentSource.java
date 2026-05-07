@@ -2,6 +2,7 @@ package at.fhv.sysarch.lab2.homeautomation.environment.mqtt;
 
 
 import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentActor;
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.KeyNotFoundException;
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttConnectionException;
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttMessageParseException;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
@@ -137,18 +138,19 @@ public class MqttEnvironmentSource extends AbstractBehavior<MqttEnvironmentSourc
 
     private void handleTemperatureMessage(String topic, String payload) {
         try {
-            double temperature = Double.parseDouble(payload);
+            String value = extractJsonValue(payload, "temperature");
+            double temperature = Double.parseDouble(value);
             environmentActor.tell(new EnvironmentActor.SetTemperature(temperature));
             getContext().getLog().info("MQTT temperature received: {}°C (topic: {})", temperature, topic);
-        } catch (NumberFormatException e) {
+        } catch (Exception e) {
             getContext().getLog().warn("Cannot parse temperature from MQTT payload: '{}' on topic '{}'", payload, topic);
-            throw new MqttMessageParseException(topic, payload, "Expected a numeric value but got '" + payload + "'");
         }
     }
 
     private void handleWeatherMessage(String topic, String payload) {
         try {
-            WeatherCondition condition = WeatherCondition.fromString(payload);
+            String value = extractJsonValue(payload, "condition");
+            WeatherCondition condition = WeatherCondition.fromString(value);
             environmentActor.tell(new EnvironmentActor.SetWeather(condition));
             getContext().getLog().info("MQTT weather received: {} (topic: {})", condition, topic);
         } catch (Exception e) {
@@ -178,6 +180,25 @@ public class MqttEnvironmentSource extends AbstractBehavior<MqttEnvironmentSourc
         disconnectMqttClient();
         getContext().getLog().info("MqttEnvironmentSource stopped");
         return this;
+    }
+
+    private String extractJsonValue(String json, String key) {
+        String search = "\"" + key + "\":";
+        int idx = json.indexOf(search);
+        if (idx == -1) {
+            throw new KeyNotFoundException("Key not found for key: " + key, json);
+        }
+
+        int start = idx + search.length();
+        if (json.charAt(start) == '"') {
+            start++;
+            int end = json.indexOf('"', start);
+            return json.substring(start, end);
+        } else {
+            int end = json.indexOf(',', start);
+            if (end == -1) end = json.indexOf('}', start);
+            return json.substring(start, end).trim();
+        }
     }
 }
 

@@ -6,5 +6,7 @@ public enum ErrorCode {
     ENV003,
 
     MQTT001,
-    MQTT002
+    MQTT002,
+
+    KEY001
 }
