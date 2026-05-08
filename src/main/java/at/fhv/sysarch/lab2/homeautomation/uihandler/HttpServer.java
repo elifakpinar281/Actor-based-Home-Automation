@@ -1,8 +1,10 @@
 package at.fhv.sysarch.lab2.homeautomation.uihandler;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.*;
-import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentActor;
-import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
+import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentSwitch;
+import at.fhv.sysarch.lab2.homeautomation.environment.SimulationMode;
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidModeException;
+import at.fhv.sysarch.lab2.homeautomation.devices.sensor.WeatherCondition;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.http.javadsl.marshallers.jackson.Jackson;
@@ -16,7 +18,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class HttpServer extends AllDirectives {
-    private final ActorRef<EnvironmentActor.EnvironmentCommand> environmentActor;
+    private final ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch;
     private final ActorRef<Fridge.FridgeCommand> fridgeActor;
     private final ActorRef<MediaStation.MediaStationCommand> mediaStationActor;
     private final ActorRef<Blinds.BlindsCommand> blindsActor;
@@ -24,12 +26,12 @@ public class HttpServer extends AllDirectives {
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     public HttpServer(
-            ActorRef<EnvironmentActor.EnvironmentCommand> environmentActor,
+            ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch,
             ActorRef<Fridge.FridgeCommand> fridgeActor,
             ActorRef<MediaStation.MediaStationCommand> mediaStationActor,
             ActorRef<Blinds.BlindsCommand> blindsActor,
             ActorSystem<?> system) {
-        this.environmentActor = environmentActor;
+        this.environmentSwitch = environmentSwitch;
         this.fridgeActor = fridgeActor;
         this.mediaStationActor = mediaStationActor;
         this.blindsActor = blindsActor;
@@ -44,7 +46,7 @@ public class HttpServer extends AllDirectives {
                                 parameter("value", valueStr -> {
                                     try {
                                         double temperature = Double.parseDouble(valueStr);
-                                        environmentActor.tell(new EnvironmentActor.SetTemperature(temperature));
+                                        environmentSwitch.tell(new EnvironmentSwitch.SetFixedTemperature(temperature));
                                         return complete(StatusCodes.OK,
                                                 new SuccessResponse("Temperature set to " + temperature + " °C"), Jackson.marshaller());
                                     } catch (NumberFormatException e) {
@@ -57,7 +59,7 @@ public class HttpServer extends AllDirectives {
                                 parameter("condition", conditionStr -> {
                                     try {
                                         WeatherCondition condition = WeatherCondition.fromString(conditionStr);
-                                        environmentActor.tell(new EnvironmentActor.SetWeather(condition));
+                                        environmentSwitch.tell(new EnvironmentSwitch.SetFixedWeather(condition));
                                         return complete(StatusCodes.OK,
                                                 new SuccessResponse("Weather set to " + condition), Jackson.marshaller());
                                     } catch (Exception e) {
@@ -69,14 +71,13 @@ public class HttpServer extends AllDirectives {
                         path("source", () -> post(() ->
                                 parameter("mode", modeStr -> {
                                     try {
-                                        EnvironmentActor.EnvironmentSource source =
-                                                EnvironmentActor.EnvironmentSource.valueOf(modeStr.toUpperCase());
-                                        environmentActor.tell(new EnvironmentActor.SwitchSource(source));
+                                        SimulationMode mode = SimulationMode.fromString(modeStr);
+                                        environmentSwitch.tell(new EnvironmentSwitch.SetMode(mode));
                                         return complete(StatusCodes.OK,
-                                                new SuccessResponse("Environment source switched to " + source), Jackson.marshaller());
-                                    } catch (Exception e) {
+                                                new SuccessResponse("Environment source switched to " + mode), Jackson.marshaller());
+                                    } catch (InvalidModeException exception) {
                                         return complete(StatusCodes.BAD_REQUEST,
-                                                new ErrorResponse("Invalid mode"), Jackson.marshaller());
+                                                new ErrorResponse("Invalid mode: " + modeStr), Jackson.marshaller());
                                     }
                                 })
                         ))

@@ -1,11 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.uihandler;
 
-import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentActor;
-import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
-import org.apache.pekko.actor.typed.ActorRef;
-import org.apache.pekko.http.javadsl.server.AllDirectives;
-import org.apache.pekko.http.javadsl.server.Route;
-
+/*
 public class DemoHttpServer extends AllDirectives {
     private final ActorRef<EnvironmentActor.EnvironmentCommand> environmentActor;
 
@@ -69,3 +64,6 @@ public class DemoHttpServer extends AllDirectives {
                 """;
     }
 }
+
+
+ */

@@ -18,5 +18,7 @@ public enum ErrorCode {
 
     MEDIA001,   // Media station error
     AC001,      // AC error
-    BLINDS001   // Blinds error
+    BLINDS001,   // Blinds error
+
+    MODE001
 }
