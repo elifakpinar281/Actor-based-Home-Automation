@@ -54,19 +54,29 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
                 context.spawn(WeatherEnvironment.create(), "weatherEnvironment");
 
         ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor =
-                context.spawn(TemperatureSensor.create(temperatureEnvironment, airCondition), "temperatureSensor");
+                context.spawn(TemperatureSensor.create(airCondition), "temperatureSensor");
 
         ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor =
-                context.spawn(WeatherSensor.create(weatherEnvironment, blinds), "weatherSensor");
+                context.spawn(WeatherSensor.create(blinds), "weatherSensor");
 
         ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch =
-                context.spawn(EnvironmentSwitch.create(temperatureSensor, weatherSensor), "environmentSwitch");
+                context.spawn(EnvironmentSwitch.create(
+                        temperatureSensor, weatherSensor,
+                        temperatureEnvironment, weatherEnvironment
+                ), "environmentSwitch");
 
+        temperatureSensor.tell(new TemperatureSensor.SetEnvironmentSwitch(environmentSwitch));
+        weatherSensor.tell(new WeatherSensor.SetEnvironmentSwitch(environmentSwitch));
         temperatureEnvironment.tell(new TemperatureEnvironment.SetEnvironmentSwitch(environmentSwitch));
         weatherEnvironment.tell(new WeatherEnvironment.SetEnvironmentSwitch(environmentSwitch));
 
-        MqttEnvironmentClient mqttClient = new MqttEnvironmentClient(environmentSwitch);
-        mqttClient.connect();
+        try {
+            MqttEnvironmentClient mqttClient = new MqttEnvironmentClient(environmentSwitch);
+            mqttClient.connect();
+            getContext().getLog().info("MQTT connected successfully");
+        } catch (Exception e) {
+            getContext().getLog().warn("MQTT not available: {}", e.getMessage());
+        }
 
         final Http http = Http.get(context.getSystem());
         HttpServer app = new HttpServer(environmentSwitch, fridge, mediaStation, blinds, context.getSystem());

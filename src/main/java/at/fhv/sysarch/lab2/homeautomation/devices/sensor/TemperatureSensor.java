@@ -1,8 +1,8 @@
 package at.fhv.sysarch.lab2.homeautomation.devices.sensor;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.AirCondition;
+import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentSwitch;
 import at.fhv.sysarch.lab2.homeautomation.environment.TemperatureEnvironment;
-import at.fhv.sysarch.lab2.homeautomation.shared.model.Temperature;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
@@ -14,20 +14,23 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
     public record SetEnabled(boolean enabled) implements TemperatureSensorCommand {}
     public record MeasureTemperature() implements TemperatureSensorCommand {}
     public record TemperatureResult(TemperatureReading temperature) implements TemperatureSensorCommand {}
+    public record SetEnvironmentSwitch(ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch) implements TemperatureSensorCommand {}
 
     private boolean enabled = true;
-    private final ActorRef<TemperatureEnvironment.TemperatureEnvironmentCommand> environment;
+    private ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch;
     private final ActorRef<AirCondition.AirConditionCommand> aircondition;
 
-    public static Behavior<TemperatureSensorCommand> create(
-            ActorRef<TemperatureEnvironment.TemperatureEnvironmentCommand> environment,
-            ActorRef<AirCondition.AirConditionCommand> aircondition) {
-        return Behaviors.setup(context -> Behaviors.withTimers(timers -> new TemperatureSensor(context, timers, environment, aircondition)));
+
+    public static Behavior<TemperatureSensorCommand> create(ActorRef<AirCondition.AirConditionCommand> aircondition) {
+        return Behaviors.setup(context ->
+                Behaviors.withTimers(timers ->
+                        new TemperatureSensor(context, timers, aircondition)
+                )
+        );
     }
 
-    private TemperatureSensor(ActorContext<TemperatureSensorCommand> context, TimerScheduler<TemperatureSensorCommand> timers, ActorRef<TemperatureEnvironment.TemperatureEnvironmentCommand> environment, ActorRef<AirCondition.AirConditionCommand> aircondition) {
+    private TemperatureSensor(ActorContext<TemperatureSensorCommand> context, TimerScheduler<TemperatureSensorCommand> timers, ActorRef<AirCondition.AirConditionCommand> aircondition) {
         super(context);
-        this.environment = environment;
         this.aircondition = aircondition;
         timers.startTimerWithFixedDelay("measure", new MeasureTemperature(), Duration.ofSeconds(5));
     }
@@ -38,18 +41,23 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
                 .onMessage(MeasureTemperature.class, this::onMeasure)
                 .onMessage(TemperatureResult.class, this::onResult)
                 .onMessage(SetEnabled.class, this::onSetEnabled)
+                .onMessage(SetEnvironmentSwitch.class, this::onSetEnvironmentSwitch)
                 .build();
     }
 
     private Behavior<TemperatureSensorCommand> onMeasure(MeasureTemperature measure) {
-        if (!enabled) {
+        if (!enabled || environmentSwitch == null) {
             getContext().getLog().debug("Sensor disabled, skipping measurement");
             return this;
         }
-        environment.tell(new TemperatureEnvironment.RequestTemperature(getContext().getSelf()));
+        environmentSwitch.tell(new EnvironmentSwitch.RequestTemperature(getContext().getSelf()));
         return this;
     }
 
+    private Behavior<TemperatureSensorCommand> onSetEnvironmentSwitch(SetEnvironmentSwitch msg) {
+        this.environmentSwitch = msg.environmentSwitch();
+        return this;
+    }
 
 
     private Behavior<TemperatureSensorCommand> onResult(TemperatureResult result) {
