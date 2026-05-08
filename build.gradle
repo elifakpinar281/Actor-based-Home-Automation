@@ -32,6 +32,8 @@ ext {
     logbackVersion = "1.5.18"
     junitVersion = "5.9.2"
     jacksonVersion = "2.15.2"
+    grpcVersion = "1.53.0"
+    protobufVersion = "3.22.0"
 }
 
 dependencies {
@@ -52,7 +54,12 @@ dependencies {
     implementation "org.eclipse.paho:org.eclipse.paho.client.mqttv3:$mqttVersion"
     implementation "com.h2database:h2:$h2Version"
     implementation "ch.qos.logback:logback-classic:$logbackVersion"
-    implementation "com.fasterxml.jackson.core:jackson-databind:$jacksonVersion"
+
+    implementation "io.grpc:grpc-netty-shaded:$grpcVersion"
+    implementation "io.grpc:grpc-protobuf:$grpcVersion"
+    implementation "io.grpc:grpc-stub:$grpcVersion"
+    implementation "com.google.protobuf:protobuf-java:$protobufVersion"
+
 
 
     testImplementation "org.junit.jupiter:junit-jupiter-api:$junitVersion"
