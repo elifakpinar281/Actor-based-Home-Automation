@@ -54,7 +54,10 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
 
     private Behavior<TemperatureSensorCommand> onResult(TemperatureResult result) {
         getContext().getLog().info("Temperature sensor received result " + result);
-        // aircondition.tell(new AirCondition.(result.temperature()));
+        aircondition.tell(new AirCondition.EnrichedTemperature(
+                result.temperature().value(),
+                result.temperature().unit()
+        ));
         return this;
 
     }

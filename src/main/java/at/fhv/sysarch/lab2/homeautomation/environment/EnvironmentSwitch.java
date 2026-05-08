@@ -2,8 +2,8 @@ package at.fhv.sysarch.lab2.homeautomation.environment;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.sensor.TemperatureReading;
 import at.fhv.sysarch.lab2.homeautomation.devices.sensor.TemperatureSensor;
-import at.fhv.sysarch.lab2.homeautomation.devices.sensor.WeatherCondition;
 import at.fhv.sysarch.lab2.homeautomation.devices.sensor.WeatherSensor;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;

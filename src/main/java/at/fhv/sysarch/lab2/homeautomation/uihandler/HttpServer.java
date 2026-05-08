@@ -4,7 +4,7 @@ import at.fhv.sysarch.lab2.homeautomation.devices.*;
 import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentSwitch;
 import at.fhv.sysarch.lab2.homeautomation.environment.SimulationMode;
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidModeException;
-import at.fhv.sysarch.lab2.homeautomation.devices.sensor.WeatherCondition;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.http.javadsl.marshallers.jackson.Jackson;

@@ -2,6 +2,7 @@ package at.fhv.sysarch.lab2.homeautomation.devices.sensor;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.Blinds;
 import at.fhv.sysarch.lab2.homeautomation.environment.WeatherEnvironment;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
@@ -47,7 +48,7 @@ public class WeatherSensor extends AbstractBehavior<WeatherSensor.WeatherSensorC
             return this;
         }
 
-        // environment.tell(new WeatherEnvironment.RequestWeather(getContext().getSelf()));
+        environment.tell(new WeatherEnvironment.RequestWeather(getContext().getSelf()));
         return this;
     }
 
@@ -59,9 +60,8 @@ public class WeatherSensor extends AbstractBehavior<WeatherSensor.WeatherSensorC
 
     private Behavior<WeatherSensorCommand> onResult(WeatherResult message) {
         getContext().getLog().info("WeatherSensor measured {}", message.condition());
-        // blinds.tell(new Blinds.createReceive(message.condition()));
+        blinds.tell(new Blinds.WeatherUpdate(message.condition()));
         return this;
     }
-
 
 }

@@ -1,6 +1,7 @@
 package at.fhv.sysarch.lab2.homeautomation.environment;
 
-import at.fhv.sysarch.lab2.homeautomation.devices.sensor.WeatherCondition;
+import at.fhv.sysarch.lab2.homeautomation.devices.sensor.WeatherSensor;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.javadsl.*;
 import org.apache.pekko.actor.typed.Behavior;
@@ -12,6 +13,7 @@ import java.util.Random;
 public class WeatherEnvironment extends AbstractBehavior<WeatherEnvironment.WeatherEnvironmentCommand> {
     public interface WeatherEnvironmentCommand {}
     public record GetWeather(ActorRef<WeatherCondition> replyTo) implements WeatherEnvironmentCommand {}
+    public record RequestWeather(ActorRef<WeatherSensor.WeatherSensorCommand> replyTo) implements WeatherEnvironmentCommand {}
     public record SetWeather(WeatherCondition condition) implements WeatherEnvironmentCommand {}
     public record Tick() implements WeatherEnvironmentCommand {}
     public record SetEnvironmentSwitch(ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch) implements WeatherEnvironmentCommand {}
@@ -40,6 +42,7 @@ public class WeatherEnvironment extends AbstractBehavior<WeatherEnvironment.Weat
                 .onMessage(GetWeather.class, this::onGetWeather)
                 .onMessage(SetWeather.class, this::onSetWeather)
                 .onMessage(SetEnvironmentSwitch.class, this::onSetEnvironmentSwitch)
+                .onMessage(RequestWeather.class, this::onRequestWeather)
                 .build();
     }
 
@@ -76,4 +79,8 @@ public class WeatherEnvironment extends AbstractBehavior<WeatherEnvironment.Weat
         return this;
     }
 
+    private Behavior<WeatherEnvironmentCommand> onRequestWeather(RequestWeather message) {
+        message.replyTo().tell(new WeatherSensor.WeatherResult(current));
+        return this;
+    }
 }
