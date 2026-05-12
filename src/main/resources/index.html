@@ -117,15 +117,16 @@
                 <option value="SUNNY">☀️ Sunny</option>
                 <option value="CLOUDY">☁️ Cloudy</option>
                 <option value="RAINY">🌧️ Rainy</option>
+                <option value="SNOWY">❄️ Snowy</option>
             </select>
             <button onclick="setWeather()">Set Weather</button>
         </div>
         <div class="form-group">
             <label for="sourceSelect">Environment Source:</label>
             <select id="sourceSelect">
-                <option value="SIMULATION">Simulation</option>
-                <option value="MQTT">MQTT</option>
-                <option value="MANUAL">Manual</option>
+                <option value="INTERNAL">Internal Simulation</option>
+                <option value="EXTERNAL_MQTT">MQTT (External)</option>
+                <option value="FIXED">Fixed (Manual)</option>
                 <option value="DISABLED">Disabled</option>
             </select>
             <button onclick="setSource()">Switch Source</button>

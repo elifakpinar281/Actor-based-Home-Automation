@@ -32,10 +32,8 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
     private final ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor;
     private final ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor;
 
-    public static Behavior<EnvironmentSwitchCommand> create(ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor, ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor,
-            ActorRef<TemperatureEnvironment.TemperatureEnvironmentCommand> temperatureEnvironment, ActorRef<WeatherEnvironment.WeatherEnvironmentCommand> weatherEnvironment) {
-        return Behaviors.setup(context -> new EnvironmentSwitch(context, temperatureSensor, weatherSensor, temperatureEnvironment, weatherEnvironment)
-        );
+    public static Behavior<EnvironmentSwitchCommand> create(ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor, ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor) {
+        return Behaviors.setup(context -> new EnvironmentSwitch(context, temperatureSensor, weatherSensor));
     }
 
     private EnvironmentSwitch(ActorContext<EnvironmentSwitchCommand> context, ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor, ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor) {

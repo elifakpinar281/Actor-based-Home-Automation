@@ -8,6 +8,8 @@ import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.http.javadsl.marshallers.jackson.Jackson;
+import org.apache.pekko.http.javadsl.model.ContentTypes;
+import org.apache.pekko.http.javadsl.model.HttpEntities;
 import org.apache.pekko.http.javadsl.model.StatusCodes;
 import org.apache.pekko.http.javadsl.server.AllDirectives;
 import org.apache.pekko.http.javadsl.server.Route;
@@ -56,7 +58,7 @@ public class HttpServer extends AllDirectives {
     public Route createRoute() {
         return concat(
                 // Home Page - lade externe HTML Datei
-                path("", () -> get(() -> complete(homePage))),
+                path("", () -> get(() -> complete(StatusCodes.OK, HttpEntities.create(ContentTypes.TEXT_HTML_UTF8, homePage)))),
 
                 // Environment Control
                 pathPrefix("environment", () -> concat(
