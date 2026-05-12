@@ -16,24 +16,26 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
     public record SetMode(SimulationMode mode) implements EnvironmentSwitchCommand {}
     public record SetFixedTemperature(double celsius) implements EnvironmentSwitchCommand {}
     public record SetFixedWeather(WeatherCondition condition) implements EnvironmentSwitchCommand {}
-
     public record InternalTemperatureUpdate(double celsius) implements EnvironmentSwitchCommand {}
     public record InternalWeatherUpdate(WeatherCondition condition) implements EnvironmentSwitchCommand {}
     public record MqttTemperatureUpdate(double celsius) implements EnvironmentSwitchCommand {}
     public record MqttWeatherUpdate(WeatherCondition condition) implements EnvironmentSwitchCommand {}
 
-    // state
+    public record RequestTemperature(ActorRef<TemperatureSensor.TemperatureSensorCommand> replyTo) implements EnvironmentSwitchCommand {}
+    public record RequestWeather(ActorRef<WeatherSensor.WeatherSensorCommand> replyTo) implements EnvironmentSwitchCommand {}
+
     private SimulationMode mode = SimulationMode.INTERNAL;
     private double fixedTemperature = 20.0;
     private WeatherCondition fixedWeather = WeatherCondition.SUNNY;
+    private double latestTemperature = 23.0;
+    private WeatherCondition latestWeather = WeatherCondition.SUNNY;
     private final ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor;
     private final ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor;
 
-    public static Behavior<EnvironmentSwitchCommand> create(
-            ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor,
-            ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor
-    ) {
-        return Behaviors.setup(context -> new EnvironmentSwitch(context, temperatureSensor, weatherSensor));
+    public static Behavior<EnvironmentSwitchCommand> create(ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor, ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor,
+            ActorRef<TemperatureEnvironment.TemperatureEnvironmentCommand> temperatureEnvironment, ActorRef<WeatherEnvironment.WeatherEnvironmentCommand> weatherEnvironment) {
+        return Behaviors.setup(context -> new EnvironmentSwitch(context, temperatureSensor, weatherSensor, temperatureEnvironment, weatherEnvironment)
+        );
     }
 
     private EnvironmentSwitch(ActorContext<EnvironmentSwitchCommand> context, ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor, ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor) {
@@ -42,7 +44,6 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
         this.weatherSensor = weatherSensor;
     }
 
-    // dispatch messages
     @Override
     public Receive<EnvironmentSwitchCommand> createReceive() {
         return newReceiveBuilder()
@@ -53,6 +54,8 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
                 .onMessage(InternalWeatherUpdate.class, this::onInternalWeather)
                 .onMessage(MqttTemperatureUpdate.class, this::onMqttTemperature)
                 .onMessage(MqttWeatherUpdate.class, this::onMqttWeather)
+                .onMessage(RequestTemperature.class, this::onRequestTemperature)
+                .onMessage(RequestWeather.class, this::onRequestWeather)
                 .build();
     }
 
@@ -66,7 +69,6 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
         return this;
     }
 
-    // fixed
     private Behavior<EnvironmentSwitchCommand> onSetFixedTemperature(SetFixedTemperature setFixedTemperature) {
         fixedTemperature = setFixedTemperature.celsius();
         if (mode == SimulationMode.FIXED) {
@@ -113,13 +115,27 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
         return this;
     }
 
+    private Behavior<EnvironmentSwitchCommand> onRequestTemperature(RequestTemperature msg) {
+        if (mode != SimulationMode.DISABLED) {
+            msg.replyTo().tell(new TemperatureSensor.TemperatureResult(TemperatureReading.celsius(latestTemperature)));
+        }
+        return this;
+    }
+
+    private Behavior<EnvironmentSwitchCommand> onRequestWeather(RequestWeather msg) {
+        if (mode != SimulationMode.DISABLED) {
+            msg.replyTo().tell(new WeatherSensor.WeatherResult(latestWeather));
+        }
+        return this;
+    }
+
     private void pushTemperature(double celsius) {
+        latestTemperature = celsius;
         temperatureSensor.tell(new TemperatureSensor.TemperatureResult(TemperatureReading.celsius(celsius)));
     }
 
     private void pushWeather(WeatherCondition weatherCondition) {
+        latestWeather = weatherCondition;
         weatherSensor.tell(new WeatherSensor.WeatherResult(weatherCondition));
     }
-
-
 }

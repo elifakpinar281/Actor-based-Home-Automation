@@ -61,8 +61,7 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
 
         ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch =
                 context.spawn(EnvironmentSwitch.create(
-                        temperatureSensor, weatherSensor,
-                        temperatureEnvironment, weatherEnvironment
+                        temperatureSensor, weatherSensor
                 ), "environmentSwitch");
 
         temperatureSensor.tell(new TemperatureSensor.SetEnvironmentSwitch(environmentSwitch));

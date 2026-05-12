@@ -7,51 +7,66 @@ import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
 
-/**
- * Note: This is an incomplete demonstration how a temperature could be implemented.
- * You may (actually, you should) change the logic so that it fits into your own actor system.
- * This class only acts as a demonstration for you to see, how an actor in java && pekko is structured.
- */
 public class AirCondition extends AbstractBehavior<AirCondition.AirConditionCommand> {
-
-    // commands our actor is able to receive
     public interface AirConditionCommand { }
     public record PowerAirCondition(boolean value) implements AirConditionCommand { }
     public record EnrichedTemperature(double value, String unit) implements AirConditionCommand { }
 
-    // factory function called when a new instance of this actor is created
+    private static final double THRESHOLD = 20.0;
+
     public static Behavior<AirConditionCommand> create(String identifier) {
         return Behaviors.setup(context -> new AirCondition(context, identifier));
     }
 
-    // mutable/immutable state variables of the actor defined here.
     private final String identifier;
+    private boolean isCooling = false;
+    private boolean isPoweredOn = true;
 
-    // constructor initializing the actor
     public AirCondition(ActorContext<AirConditionCommand> context, String identifier) {
         super(context);
         this.identifier = identifier;
-        getContext().getLog().info("AirCondition started");
+        getContext().getLog().info("AirCondition '{}' started", identifier);
     }
 
-    // message handling logic = router for incoming messages and which callbacks should process them
     @Override
     public Receive<AirConditionCommand> createReceive() {
         return newReceiveBuilder()
                 .onMessage(EnrichedTemperature.class, this::onReadTemperature)
+                .onMessage(PowerAirCondition.class, this::onPowerAirCondition)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
     }
 
     private Behavior<AirConditionCommand> onReadTemperature(EnrichedTemperature r) {
-        getContext().getLog().info("Aircondition reading {}", r.value);
-        // TODO: process temperature
+        getContext().getLog().info("AirCondition '{}': received temperature {} {}", identifier, String.format("%.1f", r.value()), r.unit());
+
+        if (!isPoweredOn) {
+            getContext().getLog().info("AirCondition '{}': is powered off, ignoring temperature", identifier);
+            return Behaviors.same();
+        }
+
+        if (r.value() > THRESHOLD && !isCooling) {
+            isCooling = true;
+            getContext().getLog().info("AirCondition '{}': Temperature {}{} > {}°C -> START COOLING", identifier, String.format("%.1f", r.value()), r.unit(), THRESHOLD);
+        } else if (r.value() <= THRESHOLD && isCooling) {
+            isCooling = false;
+            getContext().getLog().info("AirCondition '{}': Temperature {}{} <= {}°C -> STOP COOLING (turned off)", identifier, String.format("%.1f", r.value()), r.unit(), THRESHOLD);
+        }
 
         return Behaviors.same();
     }
 
+    private Behavior<AirConditionCommand> onPowerAirCondition(PowerAirCondition message) {
+        this.isPoweredOn = message.value();
+        if (!isPoweredOn) {
+            isCooling = false;
+        }
+        getContext().getLog().info("AirCondition '{}': Power {}", identifier, isPoweredOn ? "ON" : "OFF");
+        return Behaviors.same();
+    }
+
     private AirCondition onPostStop() {
-        getContext().getLog().info("AirCondition actor {}-{} stopped", identifier);
+        getContext().getLog().info("AirCondition actor {} stopped", identifier);
         return this;
     }
 }

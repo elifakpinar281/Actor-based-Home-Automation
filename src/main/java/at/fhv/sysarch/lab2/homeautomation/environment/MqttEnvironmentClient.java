@@ -5,11 +5,8 @@ import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttConnectionExcept
 import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.eclipse.paho.client.mqttv3.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class MqttEnvironmentClient {
-    private static final Logger log = LoggerFactory.getLogger(MqttEnvironmentClient.class);
     private final ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch;
     private IMqttClient mqttClient;
 
@@ -19,7 +16,7 @@ public class MqttEnvironmentClient {
 
     public void connect() {
         try {
-            mqttClient = new MqttClient("tcp://10.0.40.161.1883", MqttClient.generateClientId());
+            mqttClient = new MqttClient("tcp://10.0.40.161:1883", MqttClient.generateClientId());
             MqttConnectOptions options = new MqttConnectOptions();
             options.setAutomaticReconnect(true);
             options.setCleanSession(true);
