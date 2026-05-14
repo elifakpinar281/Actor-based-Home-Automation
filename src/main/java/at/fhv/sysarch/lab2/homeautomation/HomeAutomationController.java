@@ -39,7 +39,7 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
 
         ActorRef<Fridge.FridgeCommand> fridge =
                 getContext().spawn(
-                        Fridge.create("FRIDGE-01", 100, 50.0, orderProcessor),
+                        Fridge.create("FRIDGE-01", 80, 25.0, orderProcessor),
                         "fridge"
                 );
 
@@ -78,7 +78,7 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         }
 
         final Http http = Http.get(context.getSystem());
-        HttpServer app = new HttpServer(environmentSwitch, fridge, mediaStation, blinds, context.getSystem());
+        HttpServer app = new HttpServer(environmentSwitch, fridge, mediaStation, blinds, airCondition, context.getSystem());
         final CompletionStage<ServerBinding> binding =
                 http.newServerAt("localhost", 8084).bind(app.createRoute());
 
@@ -89,8 +89,6 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        //binding.thenCompose(ServerBinding::unbind)
-          //      .thenAccept(unbound -> getContext().getSystem().terminate());
     }
 
     @Override

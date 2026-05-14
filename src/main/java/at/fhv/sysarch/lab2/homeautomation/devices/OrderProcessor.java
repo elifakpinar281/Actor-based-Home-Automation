@@ -47,23 +47,20 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
         getContext().getLog().info("OrderProcessor: Processing order {} with {} items",
                 msg.order.getOrderId(), msg.items.size());
 
-        // Hier würde die gRPC-Kommunikation mit dem externen Order-Processor stattfinden
-        // Für Demonstration: Synchron verarbeiten
-
         Order order = msg.order;
         order.setStatus(Order.OrderStatus.COMPLETED);
 
-        // Dummy-Preisberechnung
-        double totalPrice = msg.items.size() * 10.0;
-        order.setTotalPrice(totalPrice);
+        double totalPrice = order.getTotalPrice();
 
         Receipt receipt = new Receipt(order.getOrderId(), msg.items, totalPrice);
         order.setReceipt(receipt.getReceiptId());
 
-        getContext().getLog().info("OrderProcessor: Order {} processed successfully",
-                order.getOrderId());
+        getContext().getLog().info("OrderProcessor: Order {} processed successfully (€{})",
+                order.getOrderId(), String.format("%.2f", totalPrice));
 
-        msg.replyTo.tell(new Fridge.OrderResponse(true, "Order processed successfully", receipt));
+        if (msg.replyTo != null) {
+            msg.replyTo.tell(new Fridge.OrderResponse(true, "Order processed successfully", receipt));
+        }
 
         return Behaviors.stopped();
     }

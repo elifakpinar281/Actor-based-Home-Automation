@@ -52,7 +52,6 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
         isPlaying = true;
         currentMovie = msg.movieName;
 
-        // Blinds schließen
         msg.blindsActor.tell(new Blinds.MovieStatusChanged(true));
 
         getContext().getLog().info("Media Station '{}': NOW PLAYING '{}'", identifier, currentMovie);
@@ -69,7 +68,6 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
         isPlaying = false;
         currentMovie = null;
 
-        // Blinds können wieder aufmachen
         msg.blindsActor.tell(new Blinds.MovieStatusChanged(false));
 
         getContext().getLog().info("Media Station '{}': STOPPED '{}'", identifier, stoppedMovie);

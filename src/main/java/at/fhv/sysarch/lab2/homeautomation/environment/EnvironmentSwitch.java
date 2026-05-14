@@ -24,6 +24,9 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
     public record RequestTemperature(ActorRef<TemperatureSensor.TemperatureSensorCommand> replyTo) implements EnvironmentSwitchCommand {}
     public record RequestWeather(ActorRef<WeatherSensor.WeatherSensorCommand> replyTo) implements EnvironmentSwitchCommand {}
 
+    public record GetCurrentState(ActorRef<CurrentStateResponse> replyTo) implements EnvironmentSwitchCommand {}
+    public record CurrentStateResponse(double temperature, WeatherCondition weather, SimulationMode mode) { }
+
     private SimulationMode mode = SimulationMode.INTERNAL;
     private double fixedTemperature = 20.0;
     private WeatherCondition fixedWeather = WeatherCondition.SUNNY;
@@ -54,6 +57,7 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
                 .onMessage(MqttWeatherUpdate.class, this::onMqttWeather)
                 .onMessage(RequestTemperature.class, this::onRequestTemperature)
                 .onMessage(RequestWeather.class, this::onRequestWeather)
+                .onMessage(GetCurrentState.class, this::onGetCurrentState)
                 .build();
     }
 
@@ -69,18 +73,24 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
 
     private Behavior<EnvironmentSwitchCommand> onSetFixedTemperature(SetFixedTemperature setFixedTemperature) {
         fixedTemperature = setFixedTemperature.celsius();
-        if (mode == SimulationMode.FIXED) {
-            pushTemperature(fixedTemperature);
+        // Wenn User einen konkreten Wert setzt, in FIXED-Mode wechseln, damit
+        // der Wert auch wirklich durchgepusht wird und nicht von Internal-Ticks
+        // überschrieben wird.
+        if (mode != SimulationMode.FIXED) {
+            mode = SimulationMode.FIXED;
+            getContext().getLog().info("Simulation mode auto-switched to FIXED (temperature set explicitly)");
         }
+        pushTemperature(fixedTemperature);
         return this;
-
     }
 
     private Behavior<EnvironmentSwitchCommand> onSetFixedWeather(SetFixedWeather setFixedWeather) {
         fixedWeather = setFixedWeather.condition();
-        if (mode == SimulationMode.FIXED) {
-            pushWeather(fixedWeather);
+        if (mode != SimulationMode.FIXED) {
+            mode = SimulationMode.FIXED;
+            getContext().getLog().info("Simulation mode auto-switched to FIXED (weather set explicitly)");
         }
+        pushWeather(fixedWeather);
         return this;
     }
 
@@ -89,7 +99,6 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
             pushTemperature(temperatureUpdate.celsius());
         }
         return this;
-
     }
 
     private Behavior<EnvironmentSwitchCommand> onInternalWeather(InternalWeatherUpdate weatherUpdate) {
@@ -124,6 +133,11 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
         if (mode != SimulationMode.DISABLED) {
             msg.replyTo().tell(new WeatherSensor.WeatherResult(latestWeather));
         }
+        return this;
+    }
+
+    private Behavior<EnvironmentSwitchCommand> onGetCurrentState(GetCurrentState msg) {
+        msg.replyTo.tell(new CurrentStateResponse(latestTemperature, latestWeather, mode));
         return this;
     }
 

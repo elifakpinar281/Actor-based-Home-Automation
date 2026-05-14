@@ -1,0 +1,93 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&display=swap");
+@import "tailwindcss";
+
+@theme {
+    --color-page: #eceaf1;
+
+    --color-card: #fdfafd;
+
+    --color-bg: #ece9f1;
+    --color-surface: #fdfeff;
+    --color-ink: #1f2c4c;
+    --color-ink-soft: #5a6a8a;
+    --color-accent: #3a55a3;
+    --color-danger: #c0445b;
+
+    --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+    --font-digit: "Share Tech Mono", ui-monospace, monospace;
+
+    --radius-card: 7px;
+    --radius-pill: 999px;
+
+    --shadow-neu-in: inset 4px 4px 10px rgba(31, 44, 76, 0.10), inset -4px -4px 10px rgba(255, 255, 255, 0.7);
+    --shadow-neu-in-sm: inset 2px 2px 5px rgba(31, 44, 76, 0.10), inset -2px -2px 5px rgba(255, 255, 255, 0.7);
+}
+
+html,
+body {
+    background: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+}
+
+@layer components {
+    .neu-card {
+        background: var(--color-card);
+        border-radius: var(--radius-card);
+        border: 1px solid rgb(31 44 76 / 0.15);
+    }
+    .neu-btn {
+        background: var(--color-card);
+        border-radius: var(--radius-pill);
+        border: 1px solid rgb(31 44 76 / 0.15);
+        color: var(--color-ink);
+        font-weight: 600;
+        transition: all 120ms ease;
+    }
+    .neu-btn:active:not(:disabled) {
+        box-shadow: var(--shadow-neu-in-sm);
+    }
+    .neu-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .neu-inset {
+        background: var(--color-card);
+        border-radius: var(--radius-card);
+        box-shadow: var(--shadow-neu-in);
+        border: 1px solid rgb(31 44 76 / 0.15);
+    }
+    .pill {
+        padding: 0.25rem 0.75rem;
+        border-radius: var(--radius-pill);
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .topbar-label {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        color: var(--color-ink-soft);
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .section-title {
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--color-ink);
+    }
+}
+
+.scroll-thin::-webkit-scrollbar {
+    width: 8px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+    background: rgba(31, 44, 76, 0.25);
+    border-radius: 8px;
+}

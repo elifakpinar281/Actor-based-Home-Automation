@@ -1,6 +1,7 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
 import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
+import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.PostStop;
 import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
@@ -14,6 +15,9 @@ public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
 
     public record WeatherUpdate(WeatherCondition condition) implements BlindsCommand { }
     public record MovieStatusChanged(boolean isPlaying) implements BlindsCommand { }
+    public record GetStatus(ActorRef<StatusResponse> replyTo) implements BlindsCommand { }
+
+    public record StatusResponse(boolean areClosed) { }
 
     public static Behavior<BlindsCommand> create(String identifier) {
         return Behaviors.setup(context -> new Blinds(context, identifier));
@@ -22,12 +26,17 @@ public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
     private final String identifier;
     private boolean areClosed = false;
     private boolean isMoviePlaying = false;
-    private WeatherCondition currentWeather = WeatherCondition.CLOUDY;
+    // Initial-State matched dem EnvironmentSwitch-Default (SUNNY), damit
+    // Blinds-State und tatsächliche Environment-State von Anfang an konsistent sind.
+    private WeatherCondition currentWeather = WeatherCondition.SUNNY;
 
     public Blinds(ActorContext<BlindsCommand> context, String identifier) {
         super(context);
         this.identifier = identifier;
-        getContext().getLog().info("Blinds Actor '{}' started", identifier);
+        // Initial-State direkt anhand der Defaults berechnen (sunny → closed)
+        this.areClosed = (currentWeather == WeatherCondition.SUNNY);
+        getContext().getLog().info("Blinds Actor '{}' started - initial state: {}",
+                identifier, areClosed ? "CLOSED" : "OPEN");
     }
 
     @Override
@@ -35,6 +44,7 @@ public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
         return newReceiveBuilder()
                 .onMessage(WeatherUpdate.class, this::onWeatherUpdate)
                 .onMessage(MovieStatusChanged.class, this::onMovieStatusChanged)
+                .onMessage(GetStatus.class, this::onGetStatus)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
     }
@@ -51,17 +61,19 @@ public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
         return Behaviors.same();
     }
 
+    private Behavior<BlindsCommand> onGetStatus(GetStatus msg) {
+        msg.replyTo.tell(new StatusResponse(areClosed));
+        return Behaviors.same();
+    }
+
     private void updateBlindsState() {
         boolean shouldBeClosed;
 
         if (isMoviePlaying) {
-            // Film läuft = immer geschlossen
             shouldBeClosed = true;
         } else if (currentWeather == WeatherCondition.SUNNY) {
-            // Sonnnig = geschlossen
             shouldBeClosed = true;
         } else {
-            // Nicht sunny = offen
             shouldBeClosed = false;
         }
 

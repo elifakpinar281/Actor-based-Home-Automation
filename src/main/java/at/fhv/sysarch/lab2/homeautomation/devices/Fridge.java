@@ -24,16 +24,15 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
     public interface FridgeCommand { }
 
-    // Anfragen (Request-Response)
     public record GetProducts(ActorRef<ProductsResponse> replyTo) implements FridgeCommand { }
     public record GetOrderHistory(ActorRef<OrderHistoryResponse> replyTo) implements FridgeCommand { }
-
+    public record GetCapacity(ActorRef<CapacityResponse> replyTo) implements FridgeCommand { }
     public record ConsumeProduct(String productId, int quantity) implements FridgeCommand { }
     public record OrderProducts(Map<String, Integer> items, ActorRef<OrderResponse> replyTo) implements FridgeCommand { }
 
-    // Responses
     public record ProductsResponse(List<Product> products) { }
     public record OrderHistoryResponse(List<Order> orders) { }
+    public record CapacityResponse(int currentItems, int maxItems, double currentWeight, double maxWeight) { }
     public record OrderResponse(boolean success, String message, Receipt receipt) { }
 
     public static Behavior<FridgeCommand> create(
@@ -74,10 +73,15 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     }
 
     private void initializeSampleProducts() {
-        addProduct(new Product("P001", "Milk", 1.0, 2.50, 3));
-        addProduct(new Product("P002", "Cheese", 0.5, 8.99, 2));
-        addProduct(new Product("P003", "Butter", 0.25, 4.50, 1));
-        addProduct(new Product("P004", "Eggs", 0.05, 0.20, 12));
+        addProduct(new Product("P001", "Milk",          1.03, 1.49, 2));
+        addProduct(new Product("P002", "Apples",        0.18, 0.40, 6));
+        addProduct(new Product("P003", "Sourdough",     0.55, 3.20, 0));
+        addProduct(new Product("P004", "Gruyère",       0.30, 5.80, 1));
+        addProduct(new Product("P005", "Eggs (6er)",    0.42, 2.10, 1));
+        addProduct(new Product("P006", "Chicken Breast",0.50, 7.40, 0));
+        addProduct(new Product("P007", "Salmon Filet",  0.35, 8.90, 8));
+        addProduct(new Product("P008", "Mineral Water", 1.50, 0.99, 3));
+        addProduct(new Product("P009", "Carrots",       1.00, 1.80, 0));
     }
 
     private void addProduct(Product product) {
@@ -91,6 +95,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         return newReceiveBuilder()
                 .onMessage(GetProducts.class, this::onGetProducts)
                 .onMessage(GetOrderHistory.class, this::onGetOrderHistory)
+                .onMessage(GetCapacity.class, this::onGetCapacity)
                 .onMessage(ConsumeProduct.class, this::onConsumeProduct)
                 .onMessage(OrderProducts.class, this::onOrderProducts)
                 .onSignal(PostStop.class, signal -> onPostStop())
@@ -109,6 +114,11 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         return Behaviors.same();
     }
 
+    private Behavior<FridgeCommand> onGetCapacity(GetCapacity msg) {
+        msg.replyTo.tell(new CapacityResponse(currentItemCount, maxItems, currentWeightKg, maxWeightKg));
+        return Behaviors.same();
+    }
+
     private Behavior<FridgeCommand> onConsumeProduct(ConsumeProduct msg) {
         Product product = inventory.get(msg.productId);
 
@@ -123,7 +133,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             return Behaviors.same();
         }
 
-        // Konsumieren
         product.removeQuantity(msg.quantity);
         currentItemCount -= msg.quantity;
         currentWeightKg -= (product.getWeight() * msg.quantity);
@@ -131,9 +140,8 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         getContext().getLog().info("Fridge '{}': Consumed {} x {}",
                 identifier, msg.quantity, product.getName());
 
-        // Auto-order wenn Produkt aufgebraucht
         if (product.getQuantity() == 0) {
-            autoOrderProduct(product.getId(), 5);  // Standard: 5 Stück nachbestellen
+            autoOrderProduct(product.getId(), 5);
         }
 
         return Behaviors.same();
@@ -143,11 +151,18 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         try {
             validateOrder(msg.items);
 
-            Order order = new Order(msg.items);
-            orderHistory.add(order);
-            order.setStatus(Order.OrderStatus.PROCESSING);
+            // Total schon hier berechnen, damit OrderProcessor und History denselben Wert sehen
+            double totalPrice = 0.0;
+            for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
+                Product p = inventory.get(entry.getKey());
+                totalPrice += p.getPrice() * entry.getValue();
+            }
 
-            // gRPC zum externen OrderProcessor senden
+            Order order = new Order(msg.items);
+            order.setTotalPrice(totalPrice);
+            order.setStatus(Order.OrderStatus.PROCESSING);
+            orderHistory.add(order);
+
             orderProcessorActor.tell(
                     new OrderProcessor.ProcessOrder(order, msg.items, msg.replyTo, this.identifier)
             );
@@ -156,24 +171,23 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
         } catch (FridgeException e) {
             getContext().getLog().error("Order validation failed: {}", e.getMessage());
-            msg.replyTo.tell(new OrderResponse(false, e.getMessage(), null));
+            if (msg.replyTo != null) {
+                msg.replyTo.tell(new OrderResponse(false, e.getMessage(), null));
+            }
             return Behaviors.same();
         }
     }
 
     private void validateOrder(Map<String, Integer> items) throws FridgeException {
-        // Prüfe ob alle Produkte existieren
         for (String productId : items.keySet()) {
             if (!inventory.containsKey(productId)) {
                 throw new InvalidOrderException("Product " + productId + " not found");
             }
-
             if (items.get(productId) <= 0) {
                 throw new InvalidOrderException("Quantity must be positive");
             }
         }
 
-        // Berechne neue Gewichte und Mengen
         int totalNewItems = items.values().stream().mapToInt(Integer::intValue).sum();
         if (currentItemCount + totalNewItems > maxItems) {
             throw new InsufficientSpaceException(currentItemCount, maxItems, totalNewItems);
@@ -197,7 +211,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         getContext().getLog().info("Fridge '{}': Auto-ordering {} x product {}",
                 identifier, quantity, productId);
 
-        // Dummy actor ref für auto-order responses
         ActorRef<OrderResponse> dummyRef = getContext().getSelf().unsafeUpcast();
         getContext().getSelf().tell(new OrderProducts(items, dummyRef));
     }
@@ -205,7 +218,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     public void completeOrder(Order order, Receipt receipt) {
         order.setStatus(Order.OrderStatus.COMPLETED);
 
-        // Inventar aktualisieren
         for (Map.Entry<String, Integer> entry : order.getItems().entrySet()) {
             Product p = inventory.get(entry.getKey());
             if (p != null) {

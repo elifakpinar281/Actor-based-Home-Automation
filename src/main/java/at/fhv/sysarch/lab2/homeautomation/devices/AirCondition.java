@@ -1,5 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
+import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.PostStop;
 import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
@@ -11,6 +12,9 @@ public class AirCondition extends AbstractBehavior<AirCondition.AirConditionComm
     public interface AirConditionCommand { }
     public record PowerAirCondition(boolean value) implements AirConditionCommand { }
     public record EnrichedTemperature(double value, String unit) implements AirConditionCommand { }
+    public record GetStatus(ActorRef<StatusResponse> replyTo) implements AirConditionCommand { }
+
+    public record StatusResponse(boolean isPoweredOn, boolean isCooling) { }
 
     private static final double THRESHOLD = 20.0;
 
@@ -33,6 +37,7 @@ public class AirCondition extends AbstractBehavior<AirCondition.AirConditionComm
         return newReceiveBuilder()
                 .onMessage(EnrichedTemperature.class, this::onReadTemperature)
                 .onMessage(PowerAirCondition.class, this::onPowerAirCondition)
+                .onMessage(GetStatus.class, this::onGetStatus)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
     }
@@ -62,6 +67,11 @@ public class AirCondition extends AbstractBehavior<AirCondition.AirConditionComm
             isCooling = false;
         }
         getContext().getLog().info("AirCondition '{}': Power {}", identifier, isPoweredOn ? "ON" : "OFF");
+        return Behaviors.same();
+    }
+
+    private Behavior<AirConditionCommand> onGetStatus(GetStatus msg) {
+        msg.replyTo.tell(new StatusResponse(isPoweredOn, isCooling));
         return Behaviors.same();
     }
 
