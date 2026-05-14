@@ -2,77 +2,118 @@ package at.fhv.sysarch.lab2.homeautomation.devices;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Receipt;
+import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.*;
 import org.apache.pekko.actor.typed.ActorRef;
+import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.actor.typed.Behavior;
-import org.apache.pekko.actor.typed.PostStop;
-import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
-import org.apache.pekko.actor.typed.javadsl.ActorContext;
-import org.apache.pekko.actor.typed.javadsl.Behaviors;
-import org.apache.pekko.actor.typed.javadsl.Receive;
+import org.apache.pekko.actor.typed.javadsl.*;
+import org.apache.pekko.grpc.GrpcClientSettings;
 
 import java.util.Map;
 
 public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcessorCommand> {
 
-    public interface OrderProcessorCommand { }
+    public interface OrderProcessorCommand {}
 
     public record ProcessOrder(
             Order order,
             Map<String, Integer> items,
             ActorRef<Fridge.OrderResponse> replyTo,
             String fridgeId
-    ) implements OrderProcessorCommand { }
+    ) implements OrderProcessorCommand {}
 
-    public record OrderCompleted(Order order, Receipt receipt, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand { }
+    // Wird intern als Adapter für die async gRPC-Antwort genutzt
+    private record GrpcResponse(
+            OrderResponse response,
+            Order order,
+            ActorRef<Fridge.OrderResponse> replyTo
+    ) implements OrderProcessorCommand {}
+
+    private record GrpcFailure(
+            Throwable error,
+            Order order,
+            ActorRef<Fridge.OrderResponse> replyTo
+    ) implements OrderProcessorCommand {}
+
+    private final OrderServiceClient grpcClient;
 
     public static Behavior<OrderProcessorCommand> create() {
-        return Behaviors.setup(OrderProcessor::new);
+        return Behaviors.setup(context -> {
+            ActorSystem<?> system = context.getSystem();
+            // gRPC Client Settings aus application.conf lesen
+            OrderServiceClient client = OrderServiceClient.create(
+                    GrpcClientSettings.fromConfig("orderprocessing.OrderService", system),
+                    system
+            );
+            return new OrderProcessor(context, client);
+        });
     }
 
-    public OrderProcessor(ActorContext<OrderProcessorCommand> context) {
+    private OrderProcessor(ActorContext<OrderProcessorCommand> context, OrderServiceClient client) {
         super(context);
-        getContext().getLog().debug("OrderProcessor created");
+        this.grpcClient = client;
     }
 
     @Override
     public Receive<OrderProcessorCommand> createReceive() {
         return newReceiveBuilder()
                 .onMessage(ProcessOrder.class, this::onProcessOrder)
-                .onMessage(OrderCompleted.class, this::onOrderCompleted)
-                .onSignal(PostStop.class, signal -> onPostStop())
+                .onMessage(GrpcResponse.class, this::onGrpcResponse)
+                .onMessage(GrpcFailure.class, this::onGrpcFailure)
                 .build();
     }
 
     private Behavior<OrderProcessorCommand> onProcessOrder(ProcessOrder msg) {
-        getContext().getLog().info("OrderProcessor: Processing order {} with {} items",
-                msg.order.getOrderId(), msg.items.size());
+        Map.Entry<String, Integer> firstItem = msg.items.entrySet().iterator().next();
 
-        Order order = msg.order;
-        order.setStatus(Order.OrderStatus.COMPLETED);
+        OrderRequest request = OrderRequest.newBuilder()
+                .setProductId(firstItem.getKey())
+                .setQuantity(firstItem.getValue())
+                .setUnitPrice(msg.order.getTotalPrice() / firstItem.getValue())
+                .build();
 
-        double totalPrice = order.getTotalPrice();
+        getContext().pipeToSelf(
+                grpcClient.processOrder(request),
+                (response, error) -> {
+                    if (error != null) {
+                        return new GrpcFailure(error, msg.order, msg.replyTo);
+                    }
+                    return new GrpcResponse(response, msg.order, msg.replyTo);
+                }
+        );
 
-        Receipt receipt = new Receipt(order.getOrderId(), msg.items, totalPrice);
-        order.setReceipt(receipt.getReceiptId());
+        return Behaviors.same();
+    }
 
-        getContext().getLog().info("OrderProcessor: Order {} processed successfully (€{})",
-                order.getOrderId(), String.format("%.2f", totalPrice));
+    private Behavior<OrderProcessorCommand> onGrpcResponse(GrpcResponse msg) {
+        if (msg.response.getSuccess()) {
+            OrderReceipt grpcReceipt = msg.response.getReceipt();
+            Receipt receipt = new Receipt(
+                    msg.order.getOrderId(),
+                    msg.order.getItems(),
+                    grpcReceipt.getTotalPrice()
+            );
+            msg.order.setStatus(Order.OrderStatus.COMPLETED);
+            msg.order.setReceipt(receipt.getReceiptId());
 
-        if (msg.replyTo != null) {
-            msg.replyTo.tell(new Fridge.OrderResponse(true, "Order processed successfully", receipt));
+            if (msg.replyTo != null) {
+                msg.replyTo.tell(new Fridge.OrderResponse(true, "Order processed via gRPC", receipt));
+            }
+        } else {
+            msg.order.setStatus(Order.OrderStatus.FAILED);
+            if (msg.replyTo != null) {
+                msg.replyTo.tell(new Fridge.OrderResponse(false, msg.response.getMessage(), null));
+            }
         }
-
         return Behaviors.stopped();
     }
 
-    private Behavior<OrderProcessorCommand> onOrderCompleted(OrderCompleted msg) {
-        getContext().getLog().info("OrderProcessor: Order {} marked as completed",
-                msg.order.getOrderId());
+    private Behavior<OrderProcessorCommand> onGrpcFailure(GrpcFailure msg) {
+        getContext().getLog().error("gRPC call failed: {}", msg.error.getMessage());
+        msg.order.setStatus(Order.OrderStatus.FAILED);
+        if (msg.replyTo != null) {
+            msg.replyTo.tell(new Fridge.OrderResponse(false, "gRPC error: " + msg.error.getMessage(), null));
+        }
         return Behaviors.stopped();
-    }
-
-    private OrderProcessor onPostStop() {
-        getContext().getLog().debug("OrderProcessor stopped");
-        return this;
     }
 }

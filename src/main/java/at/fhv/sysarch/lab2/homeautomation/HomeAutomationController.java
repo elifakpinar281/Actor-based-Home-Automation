@@ -18,6 +18,8 @@ import org.apache.pekko.actor.typed.javadsl.Receive;
 import org.apache.pekko.http.javadsl.Http;
 import org.apache.pekko.http.javadsl.ServerBinding;
 import java.util.concurrent.CompletionStage;
+import org.apache.pekko.actor.typed.receptionist.Receptionist;
+import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 
 public class HomeAutomationController extends AbstractBehavior<Void> {
@@ -68,6 +70,17 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         weatherSensor.tell(new WeatherSensor.SetEnvironmentSwitch(environmentSwitch));
         temperatureEnvironment.tell(new TemperatureEnvironment.SetEnvironmentSwitch(environmentSwitch));
         weatherEnvironment.tell(new WeatherEnvironment.SetEnvironmentSwitch(environmentSwitch));
+
+        context.getSystem().receptionist().tell(
+                Receptionist.register(AirCondition.SERVICE_KEY, airCondition));
+        context.getSystem().receptionist().tell(
+                Receptionist.register(Blinds.SERVICE_KEY, blinds));
+        context.getSystem().receptionist().tell(
+                Receptionist.register(MediaStation.SERVICE_KEY, mediaStation));
+        context.getSystem().receptionist().tell(
+                Receptionist.register(Fridge.SERVICE_KEY, fridge));
+        context.getSystem().receptionist().tell(
+                Receptionist.register(EnvironmentSwitch.SERVICE_KEY, environmentSwitch));
 
         try {
             MqttEnvironmentClient mqttClient = new MqttEnvironmentClient(environmentSwitch);

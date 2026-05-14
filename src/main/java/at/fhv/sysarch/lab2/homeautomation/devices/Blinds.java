@@ -8,6 +8,7 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
 import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
+import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
 
@@ -29,6 +30,10 @@ public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
     // Initial-State matched dem EnvironmentSwitch-Default (SUNNY), damit
     // Blinds-State und tatsächliche Environment-State von Anfang an konsistent sind.
     private WeatherCondition currentWeather = WeatherCondition.SUNNY;
+
+    public static final ServiceKey<BlindsCommand> SERVICE_KEY =
+            ServiceKey.create(BlindsCommand.class, "blinds");
+
 
     public Blinds(ActorContext<BlindsCommand> context, String identifier) {
         super(context);

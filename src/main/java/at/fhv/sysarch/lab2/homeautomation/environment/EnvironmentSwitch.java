@@ -10,6 +10,7 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
 import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
+import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.EnvironmentSwitchCommand> {
     public interface EnvironmentSwitchCommand {}
@@ -34,6 +35,10 @@ public class EnvironmentSwitch extends AbstractBehavior<EnvironmentSwitch.Enviro
     private WeatherCondition latestWeather = WeatherCondition.SUNNY;
     private final ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor;
     private final ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor;
+
+    public static final ServiceKey<EnvironmentSwitchCommand> SERVICE_KEY =
+            ServiceKey.create(EnvironmentSwitchCommand.class, "environmentSwitch");
+
 
     public static Behavior<EnvironmentSwitchCommand> create(ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor, ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor) {
         return Behaviors.setup(context -> new EnvironmentSwitch(context, temperatureSensor, weatherSensor));

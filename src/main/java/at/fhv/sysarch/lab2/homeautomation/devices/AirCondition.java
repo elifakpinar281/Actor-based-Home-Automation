@@ -7,6 +7,7 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
 import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
+import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class AirCondition extends AbstractBehavior<AirCondition.AirConditionCommand> {
     public interface AirConditionCommand { }
@@ -17,6 +18,10 @@ public class AirCondition extends AbstractBehavior<AirCondition.AirConditionComm
     public record StatusResponse(boolean isPoweredOn, boolean isCooling) { }
 
     private static final double THRESHOLD = 20.0;
+
+    public static final ServiceKey<AirConditionCommand> SERVICE_KEY =
+            ServiceKey.create(AirConditionCommand.class, "airCondition");
+
 
     public static Behavior<AirConditionCommand> create(String identifier) {
         return Behaviors.setup(context -> new AirCondition(context, identifier));

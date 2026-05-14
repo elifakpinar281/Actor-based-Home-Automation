@@ -7,16 +7,20 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
 import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
+import org.apache.pekko.actor.typed.receptionist.Receptionist;
+import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class MediaStation extends AbstractBehavior<MediaStation.MediaStationCommand> {
 
     public interface MediaStationCommand { }
 
-    public record PlayMovie(String movieName, ActorRef<Blinds.BlindsCommand> blindsActor) implements MediaStationCommand { }
-    public record StopMovie(ActorRef<Blinds.BlindsCommand> blindsActor) implements MediaStationCommand { }
+    public record PlayMovie(String movieName) implements MediaStationCommand { }
+    public record StopMovie() implements MediaStationCommand { }
     public record GetStatus(ActorRef<StatusResponse> replyTo) implements MediaStationCommand { }
 
     public record StatusResponse(boolean isPlaying, String currentMovie) { }
+
+    private record BlindsListingUpdated(Receptionist.Listing listing) implements MediaStationCommand {}
 
     public static Behavior<MediaStationCommand> create(String identifier) {
         return Behaviors.setup(context -> new MediaStation(context, identifier));
@@ -25,11 +29,22 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
     private final String identifier;
     private boolean isPlaying = false;
     private String currentMovie = null;
+    private ActorRef<Blinds.BlindsCommand> blindsActor = null;
+
+    public static final ServiceKey<MediaStationCommand> SERVICE_KEY =
+            ServiceKey.create(MediaStationCommand.class, "mediaStation");
+
 
     public MediaStation(ActorContext<MediaStationCommand> context, String identifier) {
         super(context);
         this.identifier = identifier;
         getContext().getLog().info("Media Station Actor '{}' started", identifier);
+        ActorRef<Receptionist.Listing> listingAdapter =
+                context.messageAdapter(Receptionist.Listing.class, BlindsListingUpdated::new);
+
+        context.getSystem().receptionist().tell(
+                Receptionist.subscribe(Blinds.SERVICE_KEY, listingAdapter)
+        );
     }
 
     @Override
@@ -38,8 +53,18 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
                 .onMessage(PlayMovie.class, this::onPlayMovie)
                 .onMessage(StopMovie.class, this::onStopMovie)
                 .onMessage(GetStatus.class, this::onGetStatus)
+                .onMessage(BlindsListingUpdated.class, this::onBlindsListingUpdated)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
+    }
+
+    private Behavior<MediaStationCommand> onBlindsListingUpdated(BlindsListingUpdated msg) {
+        var instances = msg.listing().getServiceInstances(Blinds.SERVICE_KEY);
+        if (!instances.isEmpty()) {
+            this.blindsActor = instances.iterator().next();
+            getContext().getLog().info("MediaStation: Blinds actor discovered via Receptionist");
+        }
+        return Behaviors.same();
     }
 
     private Behavior<MediaStationCommand> onPlayMovie(PlayMovie msg) {
@@ -48,11 +73,14 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
                     identifier, msg.movieName);
             return Behaviors.same();
         }
+        if (blindsActor == null) {
+            getContext().getLog().warn("Media Station '{}': Blinds not discovered yet", identifier);
+            return Behaviors.same();
+        }
 
         isPlaying = true;
         currentMovie = msg.movieName;
-
-        msg.blindsActor.tell(new Blinds.MovieStatusChanged(true));
+        blindsActor.tell(new Blinds.MovieStatusChanged(true));
 
         getContext().getLog().info("Media Station '{}': NOW PLAYING '{}'", identifier, currentMovie);
         return Behaviors.same();
@@ -68,7 +96,9 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
         isPlaying = false;
         currentMovie = null;
 
-        msg.blindsActor.tell(new Blinds.MovieStatusChanged(false));
+        if (blindsActor != null) {
+            blindsActor.tell(new Blinds.MovieStatusChanged(false));
+        }
 
         getContext().getLog().info("Media Station '{}': STOPPED '{}'", identifier, stoppedMovie);
         return Behaviors.same();

@@ -399,7 +399,7 @@ public class HttpServer extends AllDirectives {
                         return complete(StatusCodes.BAD_REQUEST,
                                 new ErrorResponse("Movie name is required"), Jackson.marshaller());
                     }
-                    mediaStationActor.tell(new MediaStation.PlayMovie(movieName, blindsActor));
+                    mediaStationActor.tell(new MediaStation.PlayMovie(movieName));
                     return complete(StatusCodes.ACCEPTED,
                             new SuccessResponse("Movie playback requested"), Jackson.marshaller());
                 })
@@ -408,7 +408,7 @@ public class HttpServer extends AllDirectives {
 
     private Route stopMovie() {
         return post(() -> {
-            mediaStationActor.tell(new MediaStation.StopMovie(blindsActor));
+            mediaStationActor.tell(new MediaStation.StopMovie());
             return complete(StatusCodes.ACCEPTED,
                     new SuccessResponse("Movie stop requested"), Jackson.marshaller());
         });

@@ -14,6 +14,7 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
 import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
+import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     public record OrderHistoryResponse(List<Order> orders) { }
     public record CapacityResponse(int currentItems, int maxItems, double currentWeight, double maxWeight) { }
     public record OrderResponse(boolean success, String message, Receipt receipt) { }
+    public record OrderCompleted(Order order, Receipt receipt) implements FridgeCommand {}
 
     public static Behavior<FridgeCommand> create(
             String identifier,
@@ -54,6 +56,11 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     private final List<Order> orderHistory = new ArrayList<>();
     private int currentItemCount = 0;
     private double currentWeightKg = 0.0;
+
+
+    public static final ServiceKey<FridgeCommand> SERVICE_KEY =
+            ServiceKey.create(FridgeCommand.class, "fridge");
+
 
     public Fridge(
             ActorContext<FridgeCommand> context,
@@ -98,6 +105,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
                 .onMessage(GetCapacity.class, this::onGetCapacity)
                 .onMessage(ConsumeProduct.class, this::onConsumeProduct)
                 .onMessage(OrderProducts.class, this::onOrderProducts)
+                .onMessage(OrderCompleted.class, this::onOrderCompleted)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
     }
@@ -148,10 +156,10 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     }
 
     private Behavior<FridgeCommand> onOrderProducts(OrderProducts msg) {
+
         try {
             validateOrder(msg.items);
 
-            // Total schon hier berechnen, damit OrderProcessor und History denselben Wert sehen
             double totalPrice = 0.0;
             for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
                 Product p = inventory.get(entry.getKey());
@@ -163,7 +171,10 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             order.setStatus(Order.OrderStatus.PROCESSING);
             orderHistory.add(order);
 
-            orderProcessorActor.tell(
+            ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor =
+                    getContext().spawnAnonymous(OrderProcessor.create());
+
+            sessionProcessor.tell(
                     new OrderProcessor.ProcessOrder(order, msg.items, msg.replyTo, this.identifier)
             );
 
@@ -176,6 +187,11 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             }
             return Behaviors.same();
         }
+    }
+
+    private Behavior<FridgeCommand> onOrderCompleted(OrderCompleted msg) {
+        completeOrder(msg.order(), msg.receipt());
+        return Behaviors.same();
     }
 
     private void validateOrder(Map<String, Integer> items) throws FridgeException {
@@ -211,8 +227,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         getContext().getLog().info("Fridge '{}': Auto-ordering {} x product {}",
                 identifier, quantity, productId);
 
-        ActorRef<OrderResponse> dummyRef = getContext().getSelf().unsafeUpcast();
-        getContext().getSelf().tell(new OrderProducts(items, dummyRef));
+        getContext().getSelf().tell(new OrderProducts(items, null));
     }
 
     public void completeOrder(Order order, Receipt receipt) {
