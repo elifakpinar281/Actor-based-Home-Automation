@@ -34,7 +34,7 @@ public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command>
             );
             dbConnection.createStatement().execute("""
                 CREATE TABLE IF NOT EXISTS orders (
-                    id VARCHAR(36) PRIMARY KEY,
+                    id VARCHAR(100) PRIMARY KEY,
                     product_id VARCHAR(50) NOT NULL,
                     quantity INT NOT NULL,
                     unit_price DOUBLE NOT NULL,

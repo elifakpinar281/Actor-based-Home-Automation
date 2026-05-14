@@ -42,13 +42,20 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
 
     public static Behavior<OrderProcessorCommand> create() {
         return Behaviors.setup(context -> {
+            context.getLog().info("OrderProcessor: SETUP STARTED");
             ActorSystem<?> system = context.getSystem();
-            // gRPC Client Settings aus application.conf lesen
-            OrderServiceClient client = OrderServiceClient.create(
-                    GrpcClientSettings.fromConfig("orderprocessing.OrderService", system),
-                    system
-            );
-            return new OrderProcessor(context, client);
+            try {
+                context.getLog().info("OrderProcessor: creating gRPC client with config...");
+                OrderServiceClient client = OrderServiceClient.create(
+                        GrpcClientSettings.fromConfig("orderprocessing.OrderService", system),
+                        system
+                );
+                context.getLog().info("OrderProcessor: gRPC client created OK");
+                return new OrderProcessor(context, client);
+            } catch (Exception e) {
+                context.getLog().error("OrderProcessor: FAILED: {}", e.getMessage(), e);
+                throw e;
+            }
         });
     }
 
@@ -67,9 +74,13 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
     }
 
     private Behavior<OrderProcessorCommand> onProcessOrder(ProcessOrder msg) {
+        getContext().getLog().info("OrderProcessor: onProcessOrder called, items: {}", msg.items.size());
+
         OrderRequest.Builder requestBuilder = OrderRequest.newBuilder();
 
         for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
+            getContext().getLog().info("OrderProcessor: adding item {} qty {} price {}",
+                    entry.getKey(), entry.getValue(), msg.prices.get(entry.getKey()));
             requestBuilder.addItems(
                     OrderItem.newBuilder()
                             .setProductId(entry.getKey())
@@ -79,12 +90,16 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
             );
         }
 
+        getContext().getLog().info("OrderProcessor: sending gRPC request...");
+
         getContext().pipeToSelf(
                 grpcClient.processOrder(requestBuilder.build()),
                 (response, error) -> {
                     if (error != null) {
+                        getContext().getLog().error("OrderProcessor: gRPC error in pipeToSelf: {}", error.getMessage());
                         return new GrpcFailure(error, msg.order, msg.replyTo, msg.fridgeRef);
                     }
+                    getContext().getLog().info("OrderProcessor: gRPC response received, success={}", response.getSuccess());
                     return new GrpcResponse(response, msg.order, msg.replyTo, msg.fridgeRef);
                 }
         );
@@ -92,6 +107,8 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
     }
 
     private Behavior<OrderProcessorCommand> onGrpcResponse(GrpcResponse msg) {
+        getContext().getLog().info("OrderProcessor: response success={}, message='{}'",
+                msg.response().getSuccess(), msg.response().getMessage());
         if (msg.response.getSuccess()) {
             OrderReceipt grpcReceipt = msg.response.getReceipt();
             Receipt receipt = new Receipt(

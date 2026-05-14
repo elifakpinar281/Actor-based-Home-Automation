@@ -163,8 +163,13 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             order.setStatus(Order.OrderStatus.PROCESSING);
             orderHistory.add(order);
 
+            getContext().getLog().info("Fridge: about to spawn OrderProcessor for order");
+
             ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor =
                     getContext().spawnAnonymous(OrderProcessor.create());
+
+            getContext().getLog().info("Fridge: OrderProcessor spawned, sending ProcessOrder");
+
 
             Map<String, Double> prices = new HashMap<>();
             for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
