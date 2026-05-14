@@ -8,12 +8,14 @@ public class ValidationActor extends AbstractBehavior<ValidationActor.Command> {
     public interface Command {}
 
     public record ValidateOrder(
-            String productId, int quantity, double unitPrice,
+            java.util.List<OrderItemData> items,
             ActorRef<ValidationResult> replyTo
     ) implements Command {}
 
+    public record OrderItemData(String productId, int quantity, double unitPrice) {}
+
     public record ValidationResult(boolean valid, String message,
-                                   String productId, int quantity, double unitPrice) {}
+                                   java.util.List<OrderItemData> items) {}
 
     private final ActorRef<PersistenceActor.Command> persistenceActor;
 
@@ -35,26 +37,21 @@ public class ValidationActor extends AbstractBehavior<ValidationActor.Command> {
     }
 
     private Behavior<Command> onValidate(ValidateOrder msg) {
-        if (msg.quantity <= 0) {
-            msg.replyTo.tell(new ValidationResult(false, "Quantity must be > 0",
-                    msg.productId, msg.quantity, msg.unitPrice));
-            return Behaviors.same();
+        for (OrderItemData item : msg.items) {
+            if (item.quantity <= 0) {
+                msg.replyTo.tell(new ValidationResult(false, "Quantity must be > 0 for " + item.productId, msg.items));
+                return Behaviors.same();
+            }
+            if (item.productId == null || item.productId.isEmpty()) {
+                msg.replyTo.tell(new ValidationResult(false, "Product ID required", msg.items));
+                return Behaviors.same();
+            }
+            if (item.unitPrice < 0) {
+                msg.replyTo.tell(new ValidationResult(false, "Price cannot be negative", msg.items));
+                return Behaviors.same();
+            }
         }
-        if (msg.productId == null || msg.productId.isEmpty()) {
-            msg.replyTo.tell(new ValidationResult(false, "Product ID required",
-                    msg.productId, msg.quantity, msg.unitPrice));
-            return Behaviors.same();
-        }
-        if (msg.unitPrice < 0) {
-            msg.replyTo.tell(new ValidationResult(false, "Price cannot be negative",
-                    msg.productId, msg.quantity, msg.unitPrice));
-            return Behaviors.same();
-        }
-
-        // Validierung OK → an PersistenceActor weiterleiten
-        persistenceActor.tell(new PersistenceActor.PersistOrder(
-                msg.productId, msg.quantity, msg.unitPrice, msg.replyTo
-        ));
+        persistenceActor.tell(new PersistenceActor.PersistOrder(msg.items, msg.replyTo));
         return Behaviors.same();
     }
 }

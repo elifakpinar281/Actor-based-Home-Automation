@@ -1,5 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.grpcdemo;
 
+/*
 import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.*;
 import org.apache.pekko.actor.typed.ActorSystem;
 
@@ -65,3 +66,5 @@ public class OrderProcessorServiceImpl implements OrderService {
         return CompletableFuture.completedFuture(response);
     }
 }
+
+ */

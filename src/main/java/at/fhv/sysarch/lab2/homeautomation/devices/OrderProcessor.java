@@ -1,6 +1,7 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
+import at.fhv.sysarch.lab2.homeautomation.devices.model.Product;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Receipt;
 import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.*;
 import org.apache.pekko.actor.typed.ActorRef;
@@ -18,21 +19,23 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
     public record ProcessOrder(
             Order order,
             Map<String, Integer> items,
+            Map<String, Double> prices,  // NEU: productId → unitPrice
             ActorRef<Fridge.OrderResponse> replyTo,
-            String fridgeId
+            String fridgeId,
+            ActorRef<Fridge.FridgeCommand> fridgeRef
     ) implements OrderProcessorCommand {}
 
     // Wird intern als Adapter für die async gRPC-Antwort genutzt
     private record GrpcResponse(
-            OrderResponse response,
-            Order order,
-            ActorRef<Fridge.OrderResponse> replyTo
+            OrderResponse response, Order order,
+            ActorRef<Fridge.OrderResponse> replyTo,
+            ActorRef<Fridge.FridgeCommand> fridgeRef
     ) implements OrderProcessorCommand {}
 
     private record GrpcFailure(
-            Throwable error,
-            Order order,
-            ActorRef<Fridge.OrderResponse> replyTo
+            Throwable error, Order order,
+            ActorRef<Fridge.OrderResponse> replyTo,
+            ActorRef<Fridge.FridgeCommand> fridgeRef
     ) implements OrderProcessorCommand {}
 
     private final OrderServiceClient grpcClient;
@@ -64,24 +67,27 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
     }
 
     private Behavior<OrderProcessorCommand> onProcessOrder(ProcessOrder msg) {
-        Map.Entry<String, Integer> firstItem = msg.items.entrySet().iterator().next();
+        OrderRequest.Builder requestBuilder = OrderRequest.newBuilder();
 
-        OrderRequest request = OrderRequest.newBuilder()
-                .setProductId(firstItem.getKey())
-                .setQuantity(firstItem.getValue())
-                .setUnitPrice(msg.order.getTotalPrice() / firstItem.getValue())
-                .build();
+        for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
+            requestBuilder.addItems(
+                    OrderItem.newBuilder()
+                            .setProductId(entry.getKey())
+                            .setQuantity(entry.getValue())
+                            .setUnitPrice(msg.prices.get(entry.getKey()))
+                            .build()
+            );
+        }
 
         getContext().pipeToSelf(
-                grpcClient.processOrder(request),
+                grpcClient.processOrder(requestBuilder.build()),
                 (response, error) -> {
                     if (error != null) {
-                        return new GrpcFailure(error, msg.order, msg.replyTo);
+                        return new GrpcFailure(error, msg.order, msg.replyTo, msg.fridgeRef);
                     }
-                    return new GrpcResponse(response, msg.order, msg.replyTo);
+                    return new GrpcResponse(response, msg.order, msg.replyTo, msg.fridgeRef);
                 }
         );
-
         return Behaviors.same();
     }
 
@@ -95,6 +101,8 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
             );
             msg.order.setStatus(Order.OrderStatus.COMPLETED);
             msg.order.setReceipt(receipt.getReceiptId());
+
+            msg.fridgeRef.tell(new Fridge.OrderCompleted(msg.order, receipt));
 
             if (msg.replyTo != null) {
                 msg.replyTo.tell(new Fridge.OrderResponse(true, "Order processed via gRPC", receipt));

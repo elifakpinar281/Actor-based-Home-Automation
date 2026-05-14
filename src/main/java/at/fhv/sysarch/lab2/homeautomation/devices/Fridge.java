@@ -38,19 +38,15 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     public record OrderCompleted(Order order, Receipt receipt) implements FridgeCommand {}
 
     public static Behavior<FridgeCommand> create(
-            String identifier,
-            int maxItems,
-            double maxWeightKg,
-            ActorRef<OrderProcessor.OrderProcessorCommand> orderProcessorActor) {
+            String identifier, int maxItems, double maxWeightKg) {
         return Behaviors.setup(context ->
-                new Fridge(context, identifier, maxItems, maxWeightKg, orderProcessorActor)
+                new Fridge(context, identifier, maxItems, maxWeightKg)
         );
     }
 
     private final String identifier;
     private final int maxItems;
     private final double maxWeightKg;
-    private final ActorRef<OrderProcessor.OrderProcessorCommand> orderProcessorActor;
 
     private final Map<String, Product> inventory = new HashMap<>();
     private final List<Order> orderHistory = new ArrayList<>();
@@ -62,18 +58,14 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             ServiceKey.create(FridgeCommand.class, "fridge");
 
 
-    public Fridge(
-            ActorContext<FridgeCommand> context,
-            String identifier,
-            int maxItems,
-            double maxWeightKg,
-            ActorRef<OrderProcessor.OrderProcessorCommand> orderProcessorActor) {
+    public Fridge(ActorContext<FridgeCommand> context,
+                  String identifier,
+                  int maxItems,
+                  double maxWeightKg) {
         super(context);
         this.identifier = identifier;
         this.maxItems = maxItems;
         this.maxWeightKg = maxWeightKg;
-        this.orderProcessorActor = orderProcessorActor;
-
         initializeSampleProducts();
         getContext().getLog().info("Fridge Actor '{}' started - Max: {} items, {} kg",
                 identifier, maxItems, maxWeightKg);
@@ -174,8 +166,15 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor =
                     getContext().spawnAnonymous(OrderProcessor.create());
 
+            Map<String, Double> prices = new HashMap<>();
+            for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
+                prices.put(entry.getKey(), inventory.get(entry.getKey()).getPrice());
+            }
+
             sessionProcessor.tell(
-                    new OrderProcessor.ProcessOrder(order, msg.items, msg.replyTo, this.identifier)
+                    new OrderProcessor.ProcessOrder(
+                            order, msg.items, prices, msg.replyTo, this.identifier, getContext().getSelf()
+                    )
             );
 
             return Behaviors.same();

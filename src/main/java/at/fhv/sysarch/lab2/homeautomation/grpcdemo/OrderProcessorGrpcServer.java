@@ -1,5 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.grpcdemo;
 
+/*
 import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.OrderServiceHandlerFactory;
 import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
@@ -49,3 +50,5 @@ public class OrderProcessorGrpcServer {
         return bound;
     }
 }
+
+ */

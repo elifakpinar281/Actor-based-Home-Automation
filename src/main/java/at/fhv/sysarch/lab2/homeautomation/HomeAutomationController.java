@@ -36,12 +36,9 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         ActorRef<Blinds.BlindsCommand> blinds =
                 getContext().spawn(Blinds.create("BLINDS-01"), "blinds");
 
-        ActorRef<OrderProcessor.OrderProcessorCommand> orderProcessor =
-                getContext().spawn(OrderProcessor.create(), "orderProcessor");
-
         ActorRef<Fridge.FridgeCommand> fridge =
                 getContext().spawn(
-                        Fridge.create("FRIDGE-01", 80, 25.0, orderProcessor),
+                        Fridge.create("FRIDGE-01", 80, 25.0),  // ohne orderProcessor
                         "fridge"
                 );
 

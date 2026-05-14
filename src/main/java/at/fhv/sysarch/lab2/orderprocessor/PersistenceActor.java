@@ -11,7 +11,7 @@ public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command>
     public interface Command {}
 
     public record PersistOrder(
-            String productId, int quantity, double unitPrice,
+            java.util.List<ValidationActor.OrderItemData> items,
             ActorRef<ValidationActor.ValidationResult> replyTo
     ) implements Command {}
 
@@ -64,30 +64,25 @@ public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command>
 
     private Behavior<Command> onPersist(PersistOrder msg) {
         String orderId = UUID.randomUUID().toString();
-        double totalPrice = msg.quantity * msg.unitPrice;
+        double totalPrice = msg.items.stream()
+                .mapToDouble(i -> i.quantity() * i.unitPrice()).sum();
 
         try {
-            PreparedStatement ps = dbConnection.prepareStatement(
-                    "INSERT INTO orders (id, product_id, quantity, unit_price, total_price, status) " +
-                            "VALUES (?, ?, ?, ?, ?, ?)"
-            );
-            ps.setString(1, orderId);
-            ps.setString(2, msg.productId);
-            ps.setInt(3, msg.quantity);
-            ps.setDouble(4, msg.unitPrice);
-            ps.setDouble(5, totalPrice);
-            ps.setString(6, "COMPLETED");
-            ps.executeUpdate();
-
-            getContext().getLog().info("Order {} persisted to H2", orderId);
-            msg.replyTo.tell(new ValidationActor.ValidationResult(
-                    true, orderId, msg.productId, msg.quantity, msg.unitPrice
-            ));
+            for (ValidationActor.OrderItemData item : msg.items) {
+                PreparedStatement ps = dbConnection.prepareStatement(
+                        "INSERT INTO orders (id, product_id, quantity, unit_price, total_price, status) VALUES (?, ?, ?, ?, ?, ?)"
+                );
+                ps.setString(1, orderId + "-" + item.productId());
+                ps.setString(2, item.productId());
+                ps.setInt(3, item.quantity());
+                ps.setDouble(4, item.unitPrice());
+                ps.setDouble(5, item.quantity() * item.unitPrice());
+                ps.setString(6, "COMPLETED");
+                ps.executeUpdate();
+            }
+            msg.replyTo.tell(new ValidationActor.ValidationResult(true, orderId, msg.items));
         } catch (SQLException e) {
-            getContext().getLog().error("Persist failed: {}", e.getMessage());
-            msg.replyTo.tell(new ValidationActor.ValidationResult(
-                    false, "DB error: " + e.getMessage(), msg.productId, msg.quantity, msg.unitPrice
-            ));
+            msg.replyTo.tell(new ValidationActor.ValidationResult(false, "DB error: " + e.getMessage(), msg.items));
         }
         return Behaviors.same();
     }
