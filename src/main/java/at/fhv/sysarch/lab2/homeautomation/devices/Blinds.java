@@ -11,7 +11,6 @@ import org.apache.pekko.actor.typed.javadsl.Receive;
 import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
-
     public interface BlindsCommand { }
 
     public record WeatherUpdate(WeatherCondition condition) implements BlindsCommand { }

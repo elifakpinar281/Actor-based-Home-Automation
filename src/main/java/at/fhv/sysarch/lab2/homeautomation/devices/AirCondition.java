@@ -11,7 +11,6 @@ import org.apache.pekko.actor.typed.javadsl.Receive;
 import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class AirCondition extends AbstractBehavior<AirCondition.AirConditionCommand> {
-
     public interface AirConditionCommand {}
 
     public record PowerAirCondition(boolean value) implements AirConditionCommand {}
