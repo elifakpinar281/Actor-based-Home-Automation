@@ -92,7 +92,7 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
 
         getContext().getLog().info("OrderProcessor: sending gRPC request...");
 
-        getContext().pipeToSelf(
+        getContext().pipeToSelf( // ?
                 grpcClient.processOrder(requestBuilder.build()),
                 (response, error) -> {
                     if (error != null) {

@@ -3,10 +3,14 @@ package at.fhv.sysarch.lab2.homeautomation.uihandler;
 import at.fhv.sysarch.lab2.homeautomation.devices.*;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Product;
-import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentSwitch;
+import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentCoordinator;
+import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentSnapshot;
 import at.fhv.sysarch.lab2.homeautomation.environment.SimulationMode;
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidModeException;
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidWeatherConditionException;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.WeatherCondition;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.*;
+
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.http.javadsl.marshallers.jackson.Jackson;
@@ -18,6 +22,7 @@ import org.apache.pekko.http.javadsl.server.AllDirectives;
 import org.apache.pekko.http.javadsl.server.Route;
 import org.apache.pekko.actor.typed.javadsl.AskPattern;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -27,103 +32,62 @@ import java.util.List;
 import java.util.Map;
 
 public class HttpServer extends AllDirectives {
-    private final ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch;
+    private static final Duration TIMEOUT = Duration.ofSeconds(5);
+
+    private final ActorRef<EnvironmentCoordinator.Command> environmentCoordinator;
     private final ActorRef<Fridge.FridgeCommand> fridgeActor;
     private final ActorRef<MediaStation.MediaStationCommand> mediaStationActor;
     private final ActorRef<Blinds.BlindsCommand> blindsActor;
     private final ActorRef<AirCondition.AirConditionCommand> airConditionActor;
     private final ActorSystem<?> system;
     private final String homePage;
-    private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     public HttpServer(
-            ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch,
+            ActorRef<EnvironmentCoordinator.Command> environmentCoordinator,
             ActorRef<Fridge.FridgeCommand> fridgeActor,
             ActorRef<MediaStation.MediaStationCommand> mediaStationActor,
             ActorRef<Blinds.BlindsCommand> blindsActor,
             ActorRef<AirCondition.AirConditionCommand> airConditionActor,
             ActorSystem<?> system) {
-        this.environmentSwitch = environmentSwitch;
+        this.environmentCoordinator = environmentCoordinator;
         this.fridgeActor = fridgeActor;
         this.mediaStationActor = mediaStationActor;
         this.blindsActor = blindsActor;
         this.airConditionActor = airConditionActor;
         this.system = system;
+        this.homePage = loadHomePage();
+    }
 
-        try {
-            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-            InputStream inputStream = classLoader.getResourceAsStream("index.html");
+    private String loadHomePage() {
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        try (InputStream inputStream = classLoader.getResourceAsStream("index.html")) {
             if (inputStream == null) {
-                this.homePage = "<h1>Home Automation</h1><p>UI läuft im Next.js-Frontend (Port 3000).</p>";
-            } else {
-                this.homePage = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-                inputStream.close();
+                return "<h1>Home Automation</h1><p>UI läuft im Next.js-Frontend (Port 3000).</p>";
             }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to load index.html: " + e.getMessage(), e);
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException cause) {
+            // Falling back to the inline page keeps the API server alive even
+            // when the bundled UI cannot be read for some reason.
+            return "<h1>Home Automation</h1><p>UI could not be loaded.</p>";
         }
     }
 
     public Route createRoute() {
         return withCors(concat(
-                path("", () -> get(() -> complete(StatusCodes.OK, HttpEntities.create(ContentTypes.TEXT_HTML_UTF8, homePage)))),
+                path("", () -> get(() -> complete(StatusCodes.OK,
+                        HttpEntities.create(ContentTypes.TEXT_HTML_UTF8, homePage)))),
 
-                // Frontend Aggregat
                 path("status", this::getStatus),
 
-                // Environment Control
                 pathPrefix("environment", () -> concat(
-                        path("temperature", () -> post(() ->
-                                parameter("value", valueStr -> {
-                                    try {
-                                        double temperature = Double.parseDouble(valueStr);
-                                        environmentSwitch.tell(new EnvironmentSwitch.SetFixedTemperature(temperature));
-                                        return complete(StatusCodes.OK,
-                                                new SuccessResponse("Temperature set to " + temperature + " °C"), Jackson.marshaller());
-                                    } catch (NumberFormatException e) {
-                                        return complete(StatusCodes.BAD_REQUEST,
-                                                new ErrorResponse("Invalid temperature value"), Jackson.marshaller());
-                                    }
-                                })
-                        )),
-                        path("weather", () -> post(() ->
-                                parameter("condition", conditionStr -> {
-                                    try {
-                                        WeatherCondition condition = WeatherCondition.fromString(conditionStr);
-                                        environmentSwitch.tell(new EnvironmentSwitch.SetFixedWeather(condition));
-                                        return complete(StatusCodes.OK,
-                                                new SuccessResponse("Weather set to " + condition), Jackson.marshaller());
-                                    } catch (Exception e) {
-                                        return complete(StatusCodes.BAD_REQUEST,
-                                                new ErrorResponse("Invalid weather condition"), Jackson.marshaller());
-                                    }
-                                })
-                        )),
-                        path("source", () -> post(() ->
-                                parameter("mode", modeStr -> {
-                                    try {
-                                        SimulationMode mode = SimulationMode.fromString(modeStr);
-                                        environmentSwitch.tell(new EnvironmentSwitch.SetMode(mode));
-                                        return complete(StatusCodes.OK,
-                                                new SuccessResponse("Environment source switched to " + mode), Jackson.marshaller());
-                                    } catch (InvalidModeException exception) {
-                                        return complete(StatusCodes.BAD_REQUEST,
-                                                new ErrorResponse("Invalid mode: " + modeStr), Jackson.marshaller());
-                                    }
-                                })
-                        ))
+                        path("temperature", () -> post(this::setFixedTemperature)),
+                        path("weather", () -> post(this::setFixedWeather)),
+                        path("source", () -> post(this::setSimulationMode))
                 )),
 
-                // AC Power
+                // AC power
                 pathPrefix("ac", () ->
-                        path("power", () -> post(() ->
-                                parameter("on", onStr -> {
-                                    boolean on = Boolean.parseBoolean(onStr);
-                                    airConditionActor.tell(new AirCondition.PowerAirCondition(on));
-                                    return complete(StatusCodes.OK,
-                                            new SuccessResponse("AC power set to " + on), Jackson.marshaller());
-                                })
-                        ))
+                        path("power", () -> post(this::setAcPower))
                 ),
 
                 // Fridge
@@ -135,7 +99,7 @@ public class HttpServer extends AllDirectives {
                         path("history", this::getOrderHistory)
                 )),
 
-                // Media Station
+                // Media station
                 pathPrefix("media-station", () -> concat(
                         path("play", this::playMovie),
                         path("stop", this::stopMovie),
@@ -147,7 +111,7 @@ public class HttpServer extends AllDirectives {
         ));
     }
 
-    // CORS-Wrapper (Next.js dev läuft auf :3000)
+    // CORS wrapper (Next.js dev runs on :3000)
     private Route withCors(Route inner) {
         return respondWithHeaders(
                 List.of(
@@ -162,13 +126,70 @@ public class HttpServer extends AllDirectives {
         );
     }
 
-    // ---- /status (aggregiert) ----
+    // ---- Environment control ----
+
+    private Route setFixedTemperature() {
+        return parameter("value", valueStr -> {
+            try {
+                double temperature = Double.parseDouble(valueStr);
+                environmentCoordinator.tell(new EnvironmentCoordinator.SetFixedTemperature(temperature));
+                return complete(StatusCodes.OK,
+                        new SuccessResponse("Temperature set to " + temperature + " °C"),
+                        Jackson.marshaller());
+            } catch (NumberFormatException ex) {
+                return complete(StatusCodes.BAD_REQUEST,
+                        new ErrorResponse("Invalid temperature value"), Jackson.marshaller());
+            }
+        });
+    }
+
+    private Route setFixedWeather() {
+        return parameter("condition", conditionStr -> {
+            try {
+                WeatherCondition condition = WeatherCondition.fromString(conditionStr);
+                environmentCoordinator.tell(new EnvironmentCoordinator.SetFixedWeather(condition));
+                return complete(StatusCodes.OK,
+                        new SuccessResponse("Weather set to " + condition), Jackson.marshaller());
+            } catch (InvalidWeatherConditionException ex) {
+                return complete(StatusCodes.BAD_REQUEST,
+                        new ErrorResponse(ex.getMessage()), Jackson.marshaller());
+            }
+        });
+    }
+
+    private Route setSimulationMode() {
+        return parameter("mode", modeStr -> {
+            try {
+                SimulationMode mode = SimulationMode.fromString(modeStr);
+                environmentCoordinator.tell(new EnvironmentCoordinator.SetMode(mode));
+                return complete(StatusCodes.OK,
+                        new SuccessResponse("Environment source switched to " + mode), Jackson.marshaller());
+            } catch (InvalidModeException ex) {
+                return complete(StatusCodes.BAD_REQUEST,
+                        new ErrorResponse(ex.getMessage()), Jackson.marshaller());
+            }
+        });
+    }
+
+    // ---- AC ----
+
+    private Route setAcPower() {
+        return parameter("on", onStr -> {
+            boolean on = Boolean.parseBoolean(onStr);
+            airConditionActor.tell(new AirCondition.PowerAirCondition(on));
+            return complete(StatusCodes.OK,
+                    new SuccessResponse("AC power set to " + on), Jackson.marshaller());
+        });
+    }
+
+    // ---- /status (aggregated) ----
+
     private Route getStatus() {
         return get(() ->
                 onComplete(
                         AskPattern.ask(
-                                environmentSwitch,
-                                (ActorRef<EnvironmentSwitch.CurrentStateResponse> replyTo) -> new EnvironmentSwitch.GetCurrentState(replyTo),
+                                environmentCoordinator,
+                                (ActorRef<EnvironmentSnapshot> replyTo) -> new EnvironmentCoordinator.GetCurrentState(replyTo),
                                 TIMEOUT,
                                 system.scheduler()
                         ),
@@ -177,7 +198,7 @@ public class HttpServer extends AllDirectives {
                                 return complete(StatusCodes.INTERNAL_SERVER_ERROR,
                                         new ErrorResponse("env state failed"), Jackson.marshaller());
                             }
-                            EnvironmentSwitch.CurrentStateResponse env = envResult.get();
+                            EnvironmentSnapshot env = envResult.get();
                             return onComplete(
                                     AskPattern.ask(
                                             airConditionActor,
@@ -218,7 +239,7 @@ public class HttpServer extends AllDirectives {
                                                                 }
                                                                 MediaStation.StatusResponse media = mediaResult.get();
                                                                 StatusDto dto = new StatusDto(
-                                                                        Math.round(env.temperature() * 10.0) / 10.0,
+                                                                        Math.round(env.temperature().value() * 10.0) / 10.0,
                                                                         env.weather().name(),
                                                                         env.mode().name(),
                                                                         ac.isPoweredOn(),
@@ -293,7 +314,7 @@ public class HttpServer extends AllDirectives {
         );
     }
 
-    // ---- Fridge: history (mit Total + Item-Names + Unit-Prices) ----
+    // ---- Fridge: history (with total + item names + unit prices) ----
     private Route getOrderHistory() {
         return get(() ->
                 onComplete(
@@ -362,7 +383,7 @@ public class HttpServer extends AllDirectives {
                                 fridgeActor.tell(new Fridge.ConsumeProduct(productId, quantity));
                                 return complete(StatusCodes.ACCEPTED,
                                         new SuccessResponse("Product consumption request sent"), Jackson.marshaller());
-                            } catch (NumberFormatException e) {
+                            } catch (NumberFormatException ex) {
                                 return complete(StatusCodes.BAD_REQUEST,
                                         new ErrorResponse("Invalid quantity"), Jackson.marshaller());
                             }
@@ -375,17 +396,17 @@ public class HttpServer extends AllDirectives {
     private Route orderProducts() {
         return post(() ->
                 entity(Jackson.unmarshaller(OrderRequest.class), request -> {
-                    if (request.items == null || request.items.isEmpty()) {
+                    if (request.items() == null || request.items().isEmpty()) {
                         return complete(StatusCodes.BAD_REQUEST,
                                 new ErrorResponse("Items are required"), Jackson.marshaller());
                     }
-                    for (Integer qty : request.items.values()) {
+                    for (Integer qty : request.items().values()) {
                         if (qty == null || qty <= 0) {
                             return complete(StatusCodes.BAD_REQUEST,
                                     new ErrorResponse("Quantities must be positive"), Jackson.marshaller());
                         }
                     }
-                    fridgeActor.tell(new Fridge.OrderProducts(request.items, null));
+                    fridgeActor.tell(new Fridge.OrderProducts(request.items(), null));
                     return complete(StatusCodes.ACCEPTED,
                             new SuccessResponse("Order request sent"), Jackson.marshaller());
                 })
@@ -436,8 +457,6 @@ public class HttpServer extends AllDirectives {
         );
     }
 
-    // Watchlist removed - not part of assignment
-
     private Route getDeviceStatus() {
         Map<String, String> status = new HashMap<>();
         status.put("fridge", "active");
@@ -448,119 +467,4 @@ public class HttpServer extends AllDirectives {
         return complete(StatusCodes.OK, status, Jackson.marshaller());
     }
 
-    // ---- DTOs ----
-
-    public static class SuccessResponse {
-        public final String message;
-        public SuccessResponse(String message) { this.message = message; }
-    }
-
-    public static class ErrorResponse {
-        public final String error;
-        public ErrorResponse(String error) { this.error = error; }
-    }
-
-    public static class MediaStatusResponse {
-        public final String currentMovie;
-        public final boolean isPlaying;
-        public MediaStatusResponse(String currentMovie, boolean isPlaying) {
-            this.currentMovie = currentMovie;
-            this.isPlaying = isPlaying;
-        }
-    }
-
-    public static class OrderRequest {
-        public Map<String, Integer> items;
-        public OrderRequest() { }
-    }
-
-    public static class StatusDto {
-        public final double temperature;
-        public final String weather;
-        public final String simulationMode;
-        public final boolean acPoweredOn;
-        public final boolean acCooling;
-        public final boolean blindsClosed;
-        public final boolean moviePlaying;
-        public final String currentMovie;
-
-        public StatusDto(double temperature, String weather, String simulationMode,
-                         boolean acPoweredOn, boolean acCooling, boolean blindsClosed,
-                         boolean moviePlaying, String currentMovie) {
-            this.temperature = temperature;
-            this.weather = weather;
-            this.simulationMode = simulationMode;
-            this.acPoweredOn = acPoweredOn;
-            this.acCooling = acCooling;
-            this.blindsClosed = blindsClosed;
-            this.moviePlaying = moviePlaying;
-            this.currentMovie = currentMovie;
-        }
-    }
-
-    public static class ProductDto {
-        public final String id;
-        public final String name;
-        public final double weight;
-        public final double price;
-        public final int quantity;
-        public ProductDto(String id, String name, double weight, double price, int quantity) {
-            this.id = id;
-            this.name = name;
-            this.weight = weight;
-            this.price = price;
-            this.quantity = quantity;
-        }
-    }
-
-    public static class ProductsDto {
-        public final List<ProductDto> products;
-        public ProductsDto(List<ProductDto> products) { this.products = products; }
-    }
-
-    public static class CapacityDto {
-        public final int currentItems;
-        public final int maxItems;
-        public final double currentWeight;
-        public final double maxWeight;
-        public CapacityDto(int currentItems, int maxItems, double currentWeight, double maxWeight) {
-            this.currentItems = currentItems;
-            this.maxItems = maxItems;
-            this.currentWeight = currentWeight;
-            this.maxWeight = maxWeight;
-        }
-    }
-
-    public static class OrderItemDto {
-        public final String productId;
-        public final String productName;
-        public final int quantity;
-        public final double unitPrice;
-        public OrderItemDto(String productId, String productName, int quantity, double unitPrice) {
-            this.productId = productId;
-            this.productName = productName;
-            this.quantity = quantity;
-            this.unitPrice = unitPrice;
-        }
-    }
-
-    public static class OrderDto {
-        public final String orderId;
-        public final String timestamp;
-        public final String status;
-        public final double totalPrice;
-        public final List<OrderItemDto> items;
-        public OrderDto(String orderId, String timestamp, String status, double totalPrice, List<OrderItemDto> items) {
-            this.orderId = orderId;
-            this.timestamp = timestamp;
-            this.status = status;
-            this.totalPrice = totalPrice;
-            this.items = items;
-        }
-    }
-
-    public static class OrderHistoryDto {
-        public final List<OrderDto> orders;
-        public OrderHistoryDto(List<OrderDto> orders) { this.orders = orders; }
-    }
 }

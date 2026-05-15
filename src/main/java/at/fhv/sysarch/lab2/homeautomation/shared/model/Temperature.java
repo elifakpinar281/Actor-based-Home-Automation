@@ -2,15 +2,26 @@ package at.fhv.sysarch.lab2.homeautomation.shared.model;
 
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidTemperatureException;
 
+
 public record Temperature(double value, String unit) {
-    private static final double MIN_TEMPERATURE = -50.0;
-    private static final double MAX_TEMPERATURE = 60.0;
+    public static final double MIN_CELSIUS = -50.0;
+    public static final double MAX_CELSIUS = 60.0;
+    public static final String CELSIUS_UNIT = "°C";
+
+    public Temperature {
+        if (value < MIN_CELSIUS || value > MAX_CELSIUS) {
+            throw new InvalidTemperatureException(value);
+        }
+    }
 
     public static Temperature celsius(double celsius) {
-        if (celsius < MIN_TEMPERATURE || celsius > MAX_TEMPERATURE) {
-            throw new InvalidTemperatureException(celsius);
-        }
-        return new Temperature(celsius, "°C");
+        return new Temperature(celsius, CELSIUS_UNIT);
+    }
+
+    public static double clampToRange(double celsius) {
+        if (celsius < MIN_CELSIUS) return MIN_CELSIUS;
+        if (celsius > MAX_CELSIUS) return MAX_CELSIUS;
+        return celsius;
     }
 
     @Override

@@ -1,53 +1,46 @@
 package at.fhv.sysarch.lab2.homeautomation.devices.sensor;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.AirCondition;
-import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentSwitch;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.Temperature;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
 
 public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.TemperatureSensorCommand> {
     public interface TemperatureSensorCommand {}
+
+    public record TemperatureMeasured(double celsius) implements TemperatureSensorCommand {}
     public record SetEnabled(boolean enabled) implements TemperatureSensorCommand {}
-    public record TemperatureResult(TemperatureReading temperature) implements TemperatureSensorCommand {}
-    public record SetEnvironmentSwitch(ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch) implements TemperatureSensorCommand {}
 
+    private final ActorRef<AirCondition.AirConditionCommand> airCondition;
     private boolean enabled = true;
-    private final ActorRef<AirCondition.AirConditionCommand> aircondition;
 
-    public static Behavior<TemperatureSensorCommand> create(ActorRef<AirCondition.AirConditionCommand> aircondition) {
-        return Behaviors.setup(context -> new TemperatureSensor(context, aircondition));
+    public static Behavior<TemperatureSensorCommand> create(ActorRef<AirCondition.AirConditionCommand> airCondition) {
+        return Behaviors.setup(context -> new TemperatureSensor(context, airCondition));
     }
 
-    private TemperatureSensor(ActorContext<TemperatureSensorCommand> context, ActorRef<AirCondition.AirConditionCommand> aircondition) {
+    private TemperatureSensor(ActorContext<TemperatureSensorCommand> context, ActorRef<AirCondition.AirConditionCommand> airCondition) {
         super(context);
-        this.aircondition = aircondition;
+        this.airCondition = airCondition;
         getContext().getLog().info("TemperatureSensor started");
     }
 
     @Override
     public Receive<TemperatureSensorCommand> createReceive() {
         return newReceiveBuilder()
-                .onMessage(TemperatureResult.class, this::onResult)
+                .onMessage(TemperatureMeasured.class, this::onTemperatureMeasured)
                 .onMessage(SetEnabled.class, this::onSetEnabled)
-                .onMessage(SetEnvironmentSwitch.class, this::onSetEnvironmentSwitch)
                 .build();
     }
 
-    private Behavior<TemperatureSensorCommand> onSetEnvironmentSwitch(SetEnvironmentSwitch msg) {
-        return this;
-    }
-
-    private Behavior<TemperatureSensorCommand> onResult(TemperatureResult result) {
+    private Behavior<TemperatureSensorCommand> onTemperatureMeasured(TemperatureMeasured measurement) {
         if (!enabled) {
-            getContext().getLog().debug("Sensor disabled, ignoring result");
+            getContext().getLog().debug("TemperatureSensor disabled, dropping {}°C", measurement.celsius());
             return this;
         }
-        getContext().getLog().info("TemperatureSensor: measured {} {}", String.format("%.1f", result.temperature().value()), result.temperature().unit());
-        aircondition.tell(new AirCondition.EnrichedTemperature(
-                result.temperature().value(),
-                result.temperature().unit()
-        ));
+        Temperature temperature = Temperature.celsius(measurement.celsius());
+        getContext().getLog().info("TemperatureSensor: measured {}", temperature);
+        airCondition.tell(new AirCondition.EnrichedTemperature(temperature));
         return this;
     }
 

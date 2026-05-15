@@ -3,10 +3,11 @@ package at.fhv.sysarch.lab2.homeautomation;
 import at.fhv.sysarch.lab2.homeautomation.devices.*;
 import at.fhv.sysarch.lab2.homeautomation.devices.sensor.TemperatureSensor;
 import at.fhv.sysarch.lab2.homeautomation.devices.sensor.WeatherSensor;
-import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentSwitch;
-import at.fhv.sysarch.lab2.homeautomation.environment.MqttEnvironmentClient;
+import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentCoordinator;
 import at.fhv.sysarch.lab2.homeautomation.environment.TemperatureEnvironment;
+import at.fhv.sysarch.lab2.homeautomation.environment.MqttEnvironmentClient;
 import at.fhv.sysarch.lab2.homeautomation.environment.WeatherEnvironment;
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttConnectionException;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.HttpServer;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
@@ -17,12 +18,17 @@ import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
 import org.apache.pekko.http.javadsl.Http;
 import org.apache.pekko.http.javadsl.ServerBinding;
+
+import java.io.IOException;
 import java.util.concurrent.CompletionStage;
 import org.apache.pekko.actor.typed.receptionist.Receptionist;
-import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 
 public class HomeAutomationController extends AbstractBehavior<Void> {
+
+    private static final String HTTP_HOST = "localhost";
+    private static final int HTTP_PORT = 8084;
+
     public static Behavior<Void> create() {
         return Behaviors.setup(HomeAutomationController::new);
     }
@@ -31,26 +37,16 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         super(context);
 
         ActorRef<AirCondition.AirConditionCommand> airCondition =
-                getContext().spawn(AirCondition.create("AC-01"), "airCondition");
+                context.spawn(AirCondition.create("AC-01"), "airCondition");
 
         ActorRef<Blinds.BlindsCommand> blinds =
-                getContext().spawn(Blinds.create("BLINDS-01"), "blinds");
+                context.spawn(Blinds.create("BLINDS-01"), "blinds");
 
         ActorRef<Fridge.FridgeCommand> fridge =
-                getContext().spawn(
-                        Fridge.create("FRIDGE-01", 80, 25.0),  // ohne orderProcessor
-                        "fridge"
-                );
+                context.spawn(Fridge.create("FRIDGE-01", 80, 25.0), "fridge");
 
         ActorRef<MediaStation.MediaStationCommand> mediaStation =
-                getContext().spawn(MediaStation.create("MEDIA-01"), "mediaStation");
-
-
-        ActorRef<TemperatureEnvironment.TemperatureEnvironmentCommand> temperatureEnvironment =
-                context.spawn(TemperatureEnvironment.create(), "temperatureEnvironment");
-
-        ActorRef<WeatherEnvironment.WeatherEnvironmentCommand> weatherEnvironment =
-                context.spawn(WeatherEnvironment.create(), "weatherEnvironment");
+                context.spawn(MediaStation.create("MEDIA-01"), "mediaStation");
 
         ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor =
                 context.spawn(TemperatureSensor.create(airCondition), "temperatureSensor");
@@ -58,47 +54,24 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor =
                 context.spawn(WeatherSensor.create(blinds), "weatherSensor");
 
-        ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch =
-                context.spawn(EnvironmentSwitch.create(
-                        temperatureSensor, weatherSensor
-                ), "environmentSwitch");
+        ActorRef<EnvironmentCoordinator.Command> environmentCoordinator =
+                context.spawn(EnvironmentCoordinator.create(temperatureSensor, weatherSensor), "environmentCoordinator");
 
-        temperatureSensor.tell(new TemperatureSensor.SetEnvironmentSwitch(environmentSwitch));
-        weatherSensor.tell(new WeatherSensor.SetEnvironmentSwitch(environmentSwitch));
-        temperatureEnvironment.tell(new TemperatureEnvironment.SetEnvironmentSwitch(environmentSwitch));
-        weatherEnvironment.tell(new WeatherEnvironment.SetEnvironmentSwitch(environmentSwitch));
+        context.spawn(TemperatureEnvironment.create(environmentCoordinator), "temperatureEnvironment");
+        context.spawn(WeatherEnvironment.create(environmentCoordinator), "weatherEnvironment");
 
-        context.getSystem().receptionist().tell(
-                Receptionist.register(AirCondition.SERVICE_KEY, airCondition));
-        context.getSystem().receptionist().tell(
-                Receptionist.register(Blinds.SERVICE_KEY, blinds));
-        context.getSystem().receptionist().tell(
-                Receptionist.register(MediaStation.SERVICE_KEY, mediaStation));
-        context.getSystem().receptionist().tell(
-                Receptionist.register(Fridge.SERVICE_KEY, fridge));
-        context.getSystem().receptionist().tell(
-                Receptionist.register(EnvironmentSwitch.SERVICE_KEY, environmentSwitch));
 
-        try {
-            MqttEnvironmentClient mqttClient = new MqttEnvironmentClient(environmentSwitch);
-            mqttClient.connect();
-            getContext().getLog().info("MQTT connected successfully");
-        } catch (Exception e) {
-            getContext().getLog().warn("MQTT not available: {}", e.getMessage());
-        }
+        context.getSystem().receptionist().tell(Receptionist.register(AirCondition.SERVICE_KEY, airCondition));
+        context.getSystem().receptionist().tell(Receptionist.register(Blinds.SERVICE_KEY, blinds));
+        context.getSystem().receptionist().tell(Receptionist.register(MediaStation.SERVICE_KEY, mediaStation));
+        context.getSystem().receptionist().tell(Receptionist.register(Fridge.SERVICE_KEY, fridge));
+        context.getSystem().receptionist().tell(Receptionist.register(EnvironmentCoordinator.SERVICE_KEY, environmentCoordinator));
 
-        final Http http = Http.get(context.getSystem());
-        HttpServer app = new HttpServer(environmentSwitch, fridge, mediaStation, blinds, airCondition, context.getSystem());
-        final CompletionStage<ServerBinding> binding =
-                http.newServerAt("localhost", 8084).bind(app.createRoute());
+        connectMqttClient(environmentCoordinator);
+        startHttpServer(context, environmentCoordinator, fridge, mediaStation, blinds, airCondition);
 
-        getContext().getLog().info("HomeAutomation Application started - PRESS RETURN TO EXIT");
-
-        try {
-            System.in.read();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        getContext().getLog().info("HomeAutomation application started — press RETURN to exit");
+        waitForShutdownSignal();
     }
 
     @Override
@@ -106,8 +79,40 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         return newReceiveBuilder().onSignal(PostStop.class, signal -> onPostStop()).build();
     }
 
+    private void connectMqttClient(ActorRef<EnvironmentCoordinator.Command> environmentCoordinator) {
+        try {
+            MqttEnvironmentClient mqttClient = new MqttEnvironmentClient(environmentCoordinator);
+            mqttClient.connect();
+            getContext().getLog().info("MQTT connected successfully");
+        } catch (MqttConnectionException ex) {
+            getContext().getLog().warn("MQTT not available: {}", ex.getMessage());
+        }
+    }
+
+    private void startHttpServer(ActorContext<Void> context,
+                                 ActorRef<EnvironmentCoordinator.Command> environmentCoordinator,
+                                 ActorRef<Fridge.FridgeCommand> fridge,
+                                 ActorRef<MediaStation.MediaStationCommand> mediaStation,
+                                 ActorRef<Blinds.BlindsCommand> blinds,
+                                 ActorRef<AirCondition.AirConditionCommand> airCondition) {
+        Http http = Http.get(context.getSystem());
+        HttpServer app = new HttpServer(
+                environmentCoordinator, fridge, mediaStation, blinds, airCondition, context.getSystem());
+        CompletionStage<ServerBinding> binding =
+                http.newServerAt(HTTP_HOST, HTTP_PORT).bind(app.createRoute());
+        getContext().getLog().info("HTTP server bound to http://{}:{}", HTTP_HOST, HTTP_PORT);
+    }
+
+    private void waitForShutdownSignal() {
+        try {
+            System.in.read();
+        } catch (IOException ex) {
+            getContext().getLog().warn("Could not read shutdown signal: {}", ex.getMessage());
+        }
+    }
+
     private HomeAutomationController onPostStop() {
-        getContext().getLog().info("HomeAutomation Application stopped");
+        getContext().getLog().info("HomeAutomation application stopped");
         return this;
     }
 }

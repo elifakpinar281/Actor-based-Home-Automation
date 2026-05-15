@@ -11,76 +11,70 @@ import java.time.Duration;
 import java.util.Random;
 
 public class WeatherEnvironment extends AbstractBehavior<WeatherEnvironment.WeatherEnvironmentCommand> {
+    private static final Duration TICK_INTERVAL = Duration.ofSeconds(10);
+    private static final WeatherCondition INITIAL_CONDITION = WeatherCondition.SUNNY;
+
     public interface WeatherEnvironmentCommand {}
-    public record GetWeather(ActorRef<WeatherCondition> replyTo) implements WeatherEnvironmentCommand {}
-    public record RequestWeather(ActorRef<WeatherSensor.WeatherSensorCommand> replyTo) implements WeatherEnvironmentCommand {}
+
     public record SetWeather(WeatherCondition condition) implements WeatherEnvironmentCommand {}
-    public record Tick() implements WeatherEnvironmentCommand {}
-    public record SetEnvironmentSwitch(ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch) implements WeatherEnvironmentCommand {}
+    public record RequestCurrentWeather(ActorRef<WeatherReply> replyTo) implements WeatherEnvironmentCommand {}
+    public record WeatherReply(WeatherCondition condition) {}
 
-    private WeatherCondition current = WeatherCondition.SUNNY;
-    private final Random random = new Random();
+    private record Tick() implements WeatherEnvironmentCommand {}
     private static final WeatherCondition[] CONDITIONS = WeatherCondition.values();
-    private ActorRef<EnvironmentSwitch.EnvironmentSwitchCommand> environmentSwitch;
 
-    public static Behavior<WeatherEnvironmentCommand> create() {
+    private final ActorRef<EnvironmentCoordinator.Command> coordinator;
+    private final Random random = new Random();
+    private WeatherCondition currentCondition = INITIAL_CONDITION;
+
+
+    public static Behavior<WeatherEnvironmentCommand> create(ActorRef<EnvironmentCoordinator.Command> coordinator) {
         return Behaviors.setup(context ->
-                Behaviors.withTimers(timers -> {timers.startTimerWithFixedDelay("tick", new Tick(), Duration.ofSeconds(10));
-                return new WeatherEnvironment(context);
-                })
-        );
+                Behaviors.withTimers(timers -> {
+                    timers.startTimerWithFixedDelay("weather-tick", new Tick(), TICK_INTERVAL);
+                    return new WeatherEnvironment(context, coordinator);
+                }));
     }
 
-    private WeatherEnvironment(ActorContext<WeatherEnvironmentCommand> context) {
+    private WeatherEnvironment(ActorContext<WeatherEnvironmentCommand> context, ActorRef<EnvironmentCoordinator.Command> coordinator) {
         super(context);
+        this.coordinator = coordinator;
+        getContext().getLog().info("WeatherEnvironment started at {}, tick every {}s", INITIAL_CONDITION, TICK_INTERVAL.toSeconds());
     }
 
     @Override
     public Receive<WeatherEnvironmentCommand> createReceive() {
         return newReceiveBuilder()
                 .onMessage(Tick.class, this::onTick)
-                .onMessage(GetWeather.class, this::onGetWeather)
                 .onMessage(SetWeather.class, this::onSetWeather)
-                .onMessage(SetEnvironmentSwitch.class, this::onSetEnvironmentSwitch)
-                .onMessage(RequestWeather.class, this::onRequestWeather)
+                .onMessage(RequestCurrentWeather.class, this::onRequestCurrentWeather)
                 .build();
     }
 
-    private Behavior<WeatherEnvironmentCommand> onTick(Tick message) {
-        int currentIndex = current.ordinal();
-        int nextIndex = random.nextInt(CONDITIONS.length - 1);
-
-        if (nextIndex >= currentIndex) {
-            nextIndex++;
-        }
-
-        current = CONDITIONS[nextIndex];
-        getContext().getLog().debug("Weather changed to {}", current);
-        if (environmentSwitch != null) {
-            environmentSwitch.tell(new EnvironmentSwitch.InternalWeatherUpdate(current));
-        }
-
-        return this;
-    }
-
-    private Behavior<WeatherEnvironmentCommand> onGetWeather(GetWeather message) {
-        message.replyTo().tell(current);
+    private Behavior<WeatherEnvironmentCommand> onTick(Tick tick) {
+        currentCondition = pickDifferentCondition(currentCondition);
+        coordinator.tell(new EnvironmentCoordinator.InternalWeatherUpdate(currentCondition));
+        getContext().getLog().debug("WeatherEnvironment: tick → {}", currentCondition);
         return this;
     }
 
     private Behavior<WeatherEnvironmentCommand> onSetWeather(SetWeather message) {
-        current = message.condition();
-        getContext().getLog().info("Weather set to {}", current);
+        currentCondition = message.condition();
+        getContext().getLog().info("WeatherEnvironment: value overridden to {}", currentCondition);
         return this;
     }
 
-    private Behavior<WeatherEnvironmentCommand> onSetEnvironmentSwitch(SetEnvironmentSwitch message) {
-        this.environmentSwitch = message.environmentSwitch();
+    private Behavior<WeatherEnvironmentCommand> onRequestCurrentWeather(RequestCurrentWeather request) {
+        request.replyTo().tell(new WeatherReply(currentCondition));
         return this;
     }
 
-    private Behavior<WeatherEnvironmentCommand> onRequestWeather(RequestWeather message) {
-        message.replyTo().tell(new WeatherSensor.WeatherResult(current));
-        return this;
+    private WeatherCondition pickDifferentCondition(WeatherCondition current) {
+        int currentIndex = current.ordinal();
+        int drawnIndex = random.nextInt(CONDITIONS.length - 1);
+        if (drawnIndex >= currentIndex) {
+            drawnIndex++;
+        }
+        return CONDITIONS[drawnIndex];
     }
 }

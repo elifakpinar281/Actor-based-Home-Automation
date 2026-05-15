@@ -32,7 +32,7 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
     private ActorRef<Blinds.BlindsCommand> blindsActor = null;
 
     public static final ServiceKey<MediaStationCommand> SERVICE_KEY =
-            ServiceKey.create(MediaStationCommand.class, "mediaStation");
+            ServiceKey.create(MediaStationCommand.class, "mediaStation"); // register über key ?
 
 
     public MediaStation(ActorContext<MediaStationCommand> context, String identifier) {

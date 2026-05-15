@@ -8,13 +8,15 @@ public enum SimulationMode {
     FIXED,
     DISABLED;
 
-
     public static SimulationMode fromString(String value) {
+        if (value == null) {
+            throw new InvalidModeException("Simulation mode value must not be null");
+        }
         for (SimulationMode mode : values()) {
-            if (mode.name().equalsIgnoreCase(value)) {
+            if (mode.name().equalsIgnoreCase(value.trim())) {
                 return mode;
             }
         }
-        throw new InvalidModeException("Unknown simulation mode: " + value);
+        throw new InvalidModeException("Unknown simulation mode: '" + value + "'");
     }
 }
