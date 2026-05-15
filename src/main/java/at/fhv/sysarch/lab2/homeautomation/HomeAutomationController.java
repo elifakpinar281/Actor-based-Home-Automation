@@ -25,7 +25,6 @@ import org.apache.pekko.actor.typed.receptionist.Receptionist;
 
 
 public class HomeAutomationController extends AbstractBehavior<Void> {
-
     private static final String HTTP_HOST = "localhost";
     private static final int HTTP_PORT = 8084;
 
@@ -89,17 +88,12 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         }
     }
 
-    private void startHttpServer(ActorContext<Void> context,
-                                 ActorRef<EnvironmentCoordinator.Command> environmentCoordinator,
-                                 ActorRef<Fridge.FridgeCommand> fridge,
-                                 ActorRef<MediaStation.MediaStationCommand> mediaStation,
-                                 ActorRef<Blinds.BlindsCommand> blinds,
-                                 ActorRef<AirCondition.AirConditionCommand> airCondition) {
+    private void startHttpServer(ActorContext<Void> context, ActorRef<EnvironmentCoordinator.Command> environmentCoordinator,
+                                 ActorRef<Fridge.FridgeCommand> fridge, ActorRef<MediaStation.MediaStationCommand> mediaStation,
+                                 ActorRef<Blinds.BlindsCommand> blinds, ActorRef<AirCondition.AirConditionCommand> airCondition) {
         Http http = Http.get(context.getSystem());
-        HttpServer app = new HttpServer(
-                environmentCoordinator, fridge, mediaStation, blinds, airCondition, context.getSystem());
-        CompletionStage<ServerBinding> binding =
-                http.newServerAt(HTTP_HOST, HTTP_PORT).bind(app.createRoute());
+        HttpServer app = new HttpServer(environmentCoordinator, fridge, mediaStation, blinds, airCondition, context.getSystem());
+        CompletionStage<ServerBinding> binding = http.newServerAt(HTTP_HOST, HTTP_PORT).bind(app.createRoute());
         getContext().getLog().info("HTTP server bound to http://{}:{}", HTTP_HOST, HTTP_PORT);
     }
 

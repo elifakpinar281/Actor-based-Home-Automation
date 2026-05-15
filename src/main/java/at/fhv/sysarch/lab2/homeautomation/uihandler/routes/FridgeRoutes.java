@@ -46,8 +46,7 @@ public class FridgeRoutes extends AllDirectives {
                         AskPattern.ask(fridgeActor, Fridge.GetProducts::new, TIMEOUT, system.scheduler()),
                         response -> {
                             if (!response.isSuccess()) {
-                                return complete(StatusCodes.INTERNAL_SERVER_ERROR,
-                                        new ErrorResponse("Failed to get products"), Jackson.marshaller());
+                                return complete(StatusCodes.INTERNAL_SERVER_ERROR, new ErrorResponse("Failed to get products"), Jackson.marshaller());
                             }
                             List<ProductDto> dtos = new ArrayList<>();
                             for (Product p : response.get().products()) {
@@ -65,17 +64,11 @@ public class FridgeRoutes extends AllDirectives {
                         AskPattern.ask(fridgeActor, Fridge.GetCapacity::new, TIMEOUT, system.scheduler()),
                         response -> {
                             if (!response.isSuccess()) {
-                                return complete(StatusCodes.INTERNAL_SERVER_ERROR,
-                                        new ErrorResponse("Failed to get capacity"), Jackson.marshaller());
+                                return complete(StatusCodes.INTERNAL_SERVER_ERROR, new ErrorResponse("Failed to get capacity"), Jackson.marshaller());
                             }
                             Fridge.CapacityResponse c = response.get();
                             return complete(StatusCodes.OK,
-                                    new CapacityDto(
-                                            c.currentItems(),
-                                            c.maxItems(),
-                                            Math.round(c.currentWeight() * 100.0) / 100.0,
-                                            c.maxWeight()
-                                    ),
+                                    new CapacityDto(c.currentItems(), c.maxItems(), Math.round(c.currentWeight() * 100.0) / 100.0, c.maxWeight()),
                                     Jackson.marshaller());
                         }
                 )
@@ -88,8 +81,7 @@ public class FridgeRoutes extends AllDirectives {
                         AskPattern.ask(fridgeActor, Fridge.GetProducts::new, TIMEOUT, system.scheduler()),
                         productsResult -> {
                             if (!productsResult.isSuccess()) {
-                                return complete(StatusCodes.INTERNAL_SERVER_ERROR,
-                                        new ErrorResponse("Failed to get products"), Jackson.marshaller());
+                                return complete(StatusCodes.INTERNAL_SERVER_ERROR, new ErrorResponse("Failed to get products"), Jackson.marshaller());
                             }
                             Map<String, Product> byId = new HashMap<>();
                             for (Product p : productsResult.get().products()) {
@@ -131,19 +123,13 @@ public class FridgeRoutes extends AllDirectives {
         return post(() ->
                 parameter("productId", productId ->
                         parameter("quantity", quantityStr -> {
-                            try {
-                                int quantity = Integer.parseInt(quantityStr);
-                                if (quantity <= 0) {
-                                    return complete(StatusCodes.BAD_REQUEST,
-                                            new ErrorResponse("Quantity must be positive"), Jackson.marshaller());
-                                }
-                                fridgeActor.tell(new Fridge.ConsumeProduct(productId, quantity));
-                                return complete(StatusCodes.ACCEPTED,
-                                        new SuccessResponse("Product consumption request sent"), Jackson.marshaller());
-                            } catch (NumberFormatException ex) {
+                            int quantity = Integer.parseInt(quantityStr);
+                            if (quantity <= 0) {
                                 return complete(StatusCodes.BAD_REQUEST,
-                                        new ErrorResponse("Invalid quantity"), Jackson.marshaller());
+                                        new ErrorResponse("Quantity must be positive"), Jackson.marshaller());
                             }
+                            fridgeActor.tell(new Fridge.ConsumeProduct(productId, quantity));
+                            return complete(StatusCodes.ACCEPTED, new SuccessResponse("Product consumption request sent"), Jackson.marshaller());
                         })
                 )
         );
@@ -153,8 +139,7 @@ public class FridgeRoutes extends AllDirectives {
         return post(() ->
                 entity(Jackson.unmarshaller(OrderRequest.class), request -> {
                     if (request.items() == null || request.items().isEmpty()) {
-                        return complete(StatusCodes.BAD_REQUEST,
-                                new ErrorResponse("Items are required"), Jackson.marshaller());
+                        return complete(StatusCodes.BAD_REQUEST, new ErrorResponse("Items are required"), Jackson.marshaller());
                     }
                     for (Integer qty : request.items().values()) {
                         if (qty == null || qty <= 0) {
@@ -163,8 +148,7 @@ public class FridgeRoutes extends AllDirectives {
                         }
                     }
                     fridgeActor.tell(new Fridge.OrderProducts(request.items(), null));
-                    return complete(StatusCodes.ACCEPTED,
-                            new SuccessResponse("Order request sent"), Jackson.marshaller());
+                    return complete(StatusCodes.ACCEPTED, new SuccessResponse("Order request sent"), Jackson.marshaller());
                 })
         );
     }

@@ -20,7 +20,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class StatusRoutes extends AllDirectives {
-
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     private final ActorRef<EnvironmentCoordinator.Command> environmentCoordinator;
@@ -29,12 +28,8 @@ public class StatusRoutes extends AllDirectives {
     private final ActorRef<MediaStation.MediaStationCommand> mediaStationActor;
     private final ActorSystem<?> system;
 
-    public StatusRoutes(
-            ActorRef<EnvironmentCoordinator.Command> environmentCoordinator,
-            ActorRef<AirCondition.AirConditionCommand> airConditionActor,
-            ActorRef<Blinds.BlindsCommand> blindsActor,
-            ActorRef<MediaStation.MediaStationCommand> mediaStationActor,
-            ActorSystem<?> system) {
+    public StatusRoutes(ActorRef<EnvironmentCoordinator.Command> environmentCoordinator, ActorRef<AirCondition.AirConditionCommand> airConditionActor,
+            ActorRef<Blinds.BlindsCommand> blindsActor, ActorRef<MediaStation.MediaStationCommand> mediaStationActor, ActorSystem<?> system) {
         this.environmentCoordinator = environmentCoordinator;
         this.airConditionActor = airConditionActor;
         this.blindsActor = blindsActor;
@@ -44,7 +39,7 @@ public class StatusRoutes extends AllDirectives {
 
     public Route routes() {
         return concat(
-                path("status",         () -> get(this::getAggregatedStatus)),
+                path("status", () -> get(this::getAggregatedStatus)),
                 path("devices/status", () -> get(this::getDeviceStatus))
         );
     }
