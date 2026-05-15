@@ -10,15 +10,15 @@ public enum ErrorCode {
 
     KEY001,
 
-    FRIDGE001,  // Insufficient space
-    FRIDGE002,  // Insufficient weight capacity
-    FRIDGE003,  // Product not available
-    FRIDGE004,  // Invalid order
-    FRIDGE005,  // Order processing failed
+    FRIDGE001,
+    FRIDGE002,
+    FRIDGE003,
+    FRIDGE004,
+    FRIDGE005,
 
-    MEDIA001,   // Media station error
-    AC001,      // AC error
-    BLINDS001,   // Blinds error
+    MEDIA001,
+    AC001,
+    BLINDS001,
 
     MODE001
 }

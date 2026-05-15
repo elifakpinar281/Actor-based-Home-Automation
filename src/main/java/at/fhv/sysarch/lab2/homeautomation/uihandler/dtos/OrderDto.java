@@ -9,6 +9,6 @@ public record OrderDto(
         String timestamp, //???
         String status,
         double totalPrice,
-        List<HttpServer.OrderItemDto>items
+        List<OrderItemDto>items
 ) {
 }

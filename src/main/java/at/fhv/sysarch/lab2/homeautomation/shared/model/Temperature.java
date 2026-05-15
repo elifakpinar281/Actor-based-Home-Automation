@@ -24,6 +24,10 @@ public record Temperature(double value, String unit) {
         return celsius;
     }
 
+    public static boolean isInRange(double celsius) {
+        return celsius >= MIN_CELSIUS && celsius <= MAX_CELSIUS;
+    }
+
     @Override
     public String toString() {
         return String.format("%.1f%s", value, unit);
