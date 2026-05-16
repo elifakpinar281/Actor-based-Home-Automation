@@ -12,7 +12,6 @@ export function useCapacity(intervalMs: number = 3000) {
             const data = await api.getCapacity();
             setCapacity(data);
         } catch {
-            // ignore - try again next interval
         }
     }, []);
 

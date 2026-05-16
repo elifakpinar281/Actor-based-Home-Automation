@@ -12,7 +12,6 @@ export function useOrders(intervalMs: number = 3000) {
             const data = await api.getOrderHistory();
             setOrders(data);
         } catch {
-            // ignore
         }
     }, []);
 

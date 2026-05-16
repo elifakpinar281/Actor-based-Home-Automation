@@ -36,20 +36,41 @@ export function OrderTab() {
     async function submitOrder() {
         if (Object.keys(cart).length === 0) return;
         setSubmitting(true);
+        const knownIds = new Set(
+            (await api.getOrderHistory().catch(() => [])).map((o: { orderId: string }) => o.orderId)
+        );
         try {
             await api.orderProducts(cart);
             push("Order placed successfully!", "success");
             setCart({});
-            // Bestand, Capacity und History neu laden, sobald die Order durch ist
             reloadProducts();
             reloadCapacity();
             reloadOrders();
         } catch (e) {
             const raw = (e as Error).message;
-            push(extractBackendMessage(raw), "error");
+            if (raw.toLowerCase().includes("failed to fetch")) {
+                await waitForNewOrder(knownIds, 10_000);
+                push("Order placed successfully!", "success");
+                setCart({});
+                reloadProducts();
+                reloadCapacity();
+                reloadOrders();
+            } else {
+                push(extractBackendMessage(raw), "error");
+            }
         } finally {
             setSubmitting(false);
         }
+    }
+
+    async function waitForNewOrder(knownIds: Set<string>, timeoutMs: number): Promise<boolean> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const current = await api.getOrderHistory().catch(() => []);
+            if (current.some((o: { orderId: string }) => !knownIds.has(o.orderId))) return true;
+            await new Promise(r => setTimeout(r, 800));
+        }
+        return false;
     }
 
     let subtotal = 0;
@@ -100,7 +121,7 @@ export function OrderTab() {
             <div className="flex lg:flex-col items-center justify-center gap-3 py-4">
                 <button
                     onClick={() => selectedId && changeQty(selectedId, 1)}
-                    disabled={!selectedId}
+                    disabled={!selectedId || submitting}
                     className="neu-btn w-12 h-12 text-2xl"
                     aria-label="Add"
                 >
@@ -108,7 +129,7 @@ export function OrderTab() {
                 </button>
                 <button
                     onClick={() => selectedId && changeQty(selectedId, -1)}
-                    disabled={!selectedId}
+                    disabled={!selectedId || submitting}
                     className="neu-btn w-12 h-12 text-2xl"
                     aria-label="Remove"
                 >
@@ -148,9 +169,20 @@ export function OrderTab() {
                     <button
                         onClick={submitOrder}
                         disabled={cartItems.length === 0 || submitting}
-                        className="neu-btn w-full h-11 text-xs tracking-widest uppercase"
+                        className="neu-btn w-full h-11 text-xs tracking-widest uppercase relative overflow-hidden"
                     >
-                        {submitting ? "Submitting…" : "Submit Order →"}
+                        {submitting ? (
+                            <span className="flex items-center justify-center gap-2">
+                                <span className="flex gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:0ms]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:150ms]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:300ms]" />
+                                </span>
+                                Processing order
+                            </span>
+                        ) : (
+                            "Submit Order →"
+                        )}
                     </button>
                 </div>
             </div>

@@ -42,8 +42,8 @@ export function OrderHistoryTab() {
                     {reversed.length === 0 ? (
                         <p className="text-sm text-ink-soft p-3">No orders yet.</p>
                     ) : (
-                        <ul className="space-y-1">
-                            {reversed.slice(0, 12).map((o) => {
+                        <ul className="space-y-1 max-h-80 overflow-y-auto scroll-thin pr-1">
+                            {reversed.map((o) => {
                                 const active = (selectedId ?? reversed[0].orderId) === o.orderId;
                                 return (
                                     <li key={o.orderId}>
@@ -78,23 +78,23 @@ function ReceiptCard({ order }: { order: Order | null }) {
     }
 
     return (
-        <div className="receipt-paper p-6 font-(family-name:--font-digit) text-ink">
-            <h3 className="text-center text-xl font-bold tracking-widest mb-4">RECEIPT</h3>
-            <ul className="space-y-1 text-sm">
+        <div className="receipt-paper p-6 font-(family-name:--font-digit) text-ink max-h-80 flex flex-col">
+            <h3 className="text-center text-xl font-bold tracking-widest mb-4 shrink-0">RECEIPT</h3>
+            <ul className="space-y-1 text-sm overflow-y-auto scroll-thin flex-1 pr-1">
                 {order.items.map((item) => {
                     const itemTotal = item.unitPrice * item.quantity;
                     return (
                         <li key={item.productId} className="flex justify-between">
-              <span>
-                {item.quantity}X {item.productName.toUpperCase()}
-              </span>
+                            <span>
+                                {item.quantity}X {item.productName.toUpperCase()}
+                            </span>
                             <span>€ {itemTotal.toFixed(2)}</span>
                         </li>
                     );
                 })}
             </ul>
-            <div className="border-t border-dashed border-ink/40 my-4" />
-            <div className="flex justify-between text-base font-bold">
+            <div className="border-t border-dashed border-ink/40 my-4 shrink-0" />
+            <div className="flex justify-between text-base font-bold shrink-0">
                 <span>TOTAL</span>
                 <span>€ {order.totalPrice.toFixed(2)}</span>
             </div>

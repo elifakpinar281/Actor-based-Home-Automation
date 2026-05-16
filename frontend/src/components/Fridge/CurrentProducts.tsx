@@ -10,7 +10,7 @@ import { Product } from "../../lib/types";
 import { ProductIcon } from "./ProductIcon";
 
 export function CurrentProducts() {
-    const { products, reload: reloadProducts } = useProducts();
+    const { products, reload: reloadProducts, reloadUntilChanged } = useProducts();
     const { capacity, reload: reloadCapacity } = useCapacity();
     const { push } = useToast();
 
@@ -32,8 +32,21 @@ export function CurrentProducts() {
 
         try {
             await api.consumeProduct(p.id, 1);
-            reloadProducts();
             reloadCapacity();
+
+            if (current - 1 <= 0) {
+                push(`${p.name} consumed — re-ordering…`, "success");
+                await reloadUntilChanged();
+            } else {
+                push(`${p.name} consumed`, "success");
+                reloadProducts();
+            }
+
+            setOptimistic((prev) => {
+                const next = { ...prev };
+                delete next[p.id];
+                return next;
+            });
         } catch (e) {
             setOptimistic((prev) => {
                 const next = { ...prev };
