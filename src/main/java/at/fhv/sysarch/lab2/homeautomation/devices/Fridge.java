@@ -1,10 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
-import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
-import at.fhv.sysarch.lab2.homeautomation.devices.model.FridgeInventory;
-import at.fhv.sysarch.lab2.homeautomation.devices.model.OrderStatus;
-import at.fhv.sysarch.lab2.homeautomation.devices.model.Product;
-import at.fhv.sysarch.lab2.homeautomation.devices.model.Receipt;
+import at.fhv.sysarch.lab2.homeautomation.devices.model.*;
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.*;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
@@ -19,7 +15,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.*;
 
 public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
@@ -65,7 +60,8 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         for (Product product : initialInventory) {
             addToInventory(product);
         }
-        getContext().getLog().info("Fridge '{}' started — max: {} items, {} kg, initial: {} items / {} kg", identifier, maxItems, maxWeightKg, currentItemCount, currentWeightKg);
+        getContext().getLog().info("Fridge '{}' started — max: {} items, {} kg, initial: {} items / {} kg",
+                identifier, maxItems, maxWeightKg, currentItemCount, currentWeightKg);
     }
 
     private void addToInventory(Product product) {
@@ -128,8 +124,9 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     }
 
     private Behavior<FridgeCommand> onOrderProducts(OrderProducts msg) {
+        List<OrderLineItem> lineItems;
         try {
-            validateOrder(msg.items());
+            lineItems = validateAndBuildLineItems(msg.items());
         } catch (FridgeException ex) {
             getContext().getLog().warn("Fridge '{}': order validation failed: {}", identifier, ex.getMessage());
             if (msg.replyTo() != null) {
@@ -138,33 +135,31 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             return Behaviors.same();
         }
 
-        double totalPrice = computeTotalPrice(msg.items());
-        Order order = Order.create(msg.items(), totalPrice).withStatus(OrderStatus.PROCESSING);
+        Order order = Order.create(lineItems).withStatus(OrderStatus.PROCESSING);
         orderHistory.add(order);
 
-        Map<String, Double> unitPrices = new HashMap<>();
-        for (String productId : msg.items().keySet()) {
-            unitPrices.put(productId, inventory.get(productId).price());
-        }
-
         ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor = getContext().spawnAnonymous(OrderProcessor.create(getContext().getSelf()));
-        sessionProcessor.tell(new OrderProcessor.ProcessOrder(order, unitPrices, msg.replyTo()));
+        sessionProcessor.tell(new OrderProcessor.ProcessOrder(order, msg.replyTo()));
 
-        getContext().getLog().info("Fridge '{}': dispatched order {} ({} items, €{}) to external processor", identifier, order.orderId(), msg.items().size(), totalPrice);
+        getContext().getLog().info("Fridge '{}': dispatched order {} ({} positions, €{}) to external processor",
+                identifier, order.orderId(), order.lineItems().size(), order.totalPrice());
         return Behaviors.same();
     }
 
     private Behavior<FridgeCommand> onOrderCompleted(OrderCompleted msg) {
         replaceOrderInHistory(msg.order().completed(msg.receipt().receiptId()));
-
-        for (Map.Entry<String, Integer> entry : msg.order().items().entrySet()) {
-            Product product = inventory.get(entry.getKey());
-            if (product != null) {
-                Product updated = product.addQuantity(entry.getValue());
+        for (OrderLineItem item : msg.order().lineItems()) {
+            Product existing = inventory.get(item.productId());
+            if (existing != null) {
+                Product updated = existing.addQuantity(item.quantity());
                 inventory.put(updated.id(), updated);
-                currentItemCount += entry.getValue();
-                currentWeightKg += product.weight() * entry.getValue();
+            } else {
+                // Sollte nicht passieren.
+                Product fresh = new Product(item.productId(), item.productName(), item.weightPerUnit(), item.unitPrice(), item.quantity(), item.quantity());
+                inventory.put(fresh.id(), fresh);
             }
+            currentItemCount += item.quantity();
+            currentWeightKg += item.totalWeight();
         }
 
         getContext().getLog().info("Fridge '{}': order {} completed — {}", identifier, msg.order().orderId(), msg.receipt());
@@ -177,9 +172,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
     private Behavior<FridgeCommand> onOrderFailed(OrderFailed msg) {
         replaceOrderInHistory(msg.order().failed());
-        getContext().getLog().warn("Fridge '{}': order {} failed — {}",
-                identifier, msg.order().orderId(), msg.reason());
-
+        getContext().getLog().warn("Fridge '{}': order {} failed — {}", identifier, msg.order().orderId(), msg.reason());
         if (msg.replyTo() != null) {
             msg.replyTo().tell(new OrderResponse(false, msg.reason(), null));
         }
@@ -195,11 +188,12 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         }
     }
 
-    private void validateOrder(Map<String, Integer> items) throws FridgeException {
+    private List<OrderLineItem> validateAndBuildLineItems(Map<String, Integer> items) throws FridgeException {
         if (items == null || items.isEmpty()) {
             throw new InvalidOrderException("Order must contain at least one item");
         }
 
+        List<OrderLineItem> lineItems = new ArrayList<>(items.size());
         int totalNewItems = 0;
         double totalNewWeight = 0.0;
 
@@ -214,6 +208,8 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             if (product == null) {
                 throw new ProductNotAvailableException(productId, quantity, 0);
             }
+
+            lineItems.add(new OrderLineItem(product.id(), product.name(), quantity, product.price(), product.weight()));
             totalNewItems += quantity;
             totalNewWeight += product.weight() * quantity;
         }
@@ -224,14 +220,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         if (currentWeightKg + totalNewWeight > maxWeightKg) {
             throw new InsufficientWeightCapacityException(currentWeightKg, maxWeightKg, totalNewWeight);
         }
-    }
-
-    private double computeTotalPrice(Map<String, Integer> items) {
-        double total = 0.0;
-        for (Map.Entry<String, Integer> entry : items.entrySet()) {
-            total += inventory.get(entry.getKey()).price() * entry.getValue();
-        }
-        return total;
+        return lineItems;
     }
 
     private void triggerAutoOrder(String productId) {
@@ -242,11 +231,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         }
 
         int target = product.initialQuantity();
-        if (target <= 0) {
-            getContext().getLog().debug("Fridge '{}': auto-order skipped for '{}' — initialQuantity is 0, no reorder configured", identifier, product.name());
-            return;
-        }
-
         int remainingSlots = maxItems - currentItemCount;
         double remainingWeightKg = maxWeightKg - currentWeightKg;
         double neededWeightKg = product.weight() * target;
@@ -258,7 +242,8 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         }
 
         if (neededWeightKg > remainingWeightKg) {
-            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' — needs {} kg but only {} kg remaining", identifier, product.name(),
+            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' — needs {} kg but only {} kg remaining",
+                    identifier, product.name(),
                     String.format("%.2f", neededWeightKg), String.format("%.2f", remainingWeightKg));
             return;
         }

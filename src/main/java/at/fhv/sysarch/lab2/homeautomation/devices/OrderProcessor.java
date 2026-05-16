@@ -1,6 +1,7 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
+import at.fhv.sysarch.lab2.homeautomation.devices.model.OrderLineItem;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Product;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Receipt;
 import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.*;
@@ -15,8 +16,9 @@ import java.util.Map;
 public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcessorCommand> {
     public interface OrderProcessorCommand {}
 
-    public record ProcessOrder(Order order, Map<String, Double> unitPrices, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
+    public record ProcessOrder(Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
 
+    // Adapter für die CompletableFuture des gRPC-Calls
     private record GrpcResponse(OrderResponse response, Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
     private record GrpcFailure(Throwable error, Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
 
@@ -26,10 +28,7 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
     public static Behavior<OrderProcessorCommand> create(ActorRef<Fridge.FridgeCommand> fridge) {
         return Behaviors.setup(context -> {
             ActorSystem<?> system = context.getSystem();
-            OrderServiceClient client = OrderServiceClient.create(
-                    GrpcClientSettings.fromConfig("orderprocessing.OrderService", system),
-                    system
-            );
+            OrderServiceClient client = OrderServiceClient.create(GrpcClientSettings.fromConfig("orderprocessing.OrderService", system), system);
             context.getLog().debug("OrderProcessor session started");
             return new OrderProcessor(context, client, fridge);
         });
@@ -52,20 +51,19 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
 
     private Behavior<OrderProcessorCommand> onProcessOrder(ProcessOrder msg) {
         OrderRequest.Builder requestBuilder = OrderRequest.newBuilder();
-        for (Map.Entry<String, Integer> entry : msg.order().items().entrySet()) {
+        for (OrderLineItem item : msg.order().lineItems()) {
             requestBuilder.addItems(
                     OrderItem.newBuilder()
-                            .setProductId(entry.getKey())
-                            .setQuantity(entry.getValue())
-                            .setUnitPrice(msg.unitPrices().getOrDefault(entry.getKey(), 0.0))
+                            .setProductId(item.productId())
+                            .setQuantity(item.quantity())
+                            .setUnitPrice(item.unitPrice())
                             .build()
             );
         }
 
-        getContext().getLog().info("OrderProcessor: sending order {} via gRPC ({} items)",
-                msg.order().orderId(), msg.order().items().size());
+        getContext().getLog().info("OrderProcessor: sending order {} via gRPC ({} positions)", msg.order().orderId(), msg.order().lineItems().size());
 
-        // ist pipe gut?
+        // gRPC-Future-Ergebnis als Pekko-Message zurück an uns selbst.
         getContext().pipeToSelf(
                 grpcClient.processOrder(requestBuilder.build()),
                 (response, error) -> error != null
@@ -79,7 +77,7 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
         if (msg.response().getSuccess()) {
             Receipt receipt = Receipt.create(
                     msg.order().orderId(),
-                    msg.order().items(),
+                    msg.order().lineItems(),
                     msg.response().getReceipt().getTotalPrice()
             );
             getContext().getLog().info("OrderProcessor: order {} completed by external system", msg.order().orderId());

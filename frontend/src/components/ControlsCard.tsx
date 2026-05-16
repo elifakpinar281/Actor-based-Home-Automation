@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useToast } from "../hooks/useToast";
+import { Hint } from "./Hint";
 import { SimulationMode, Status, Weather } from "../lib/types";
 
 interface Props {
@@ -13,8 +15,11 @@ const TEMP_MAX = 35;
 const TEMP_STEP = 0.5;
 
 export function ControlsCard({ status }: Props) {
+    const { push } = useToast();
     const [target, setTarget] = useState<number>(20);
     const [editing, setEditing] = useState<boolean>(false);
+    const [localWeather, setLocalWeather] = useState<Weather | null>(null);
+    const [localMode, setLocalMode] = useState<SimulationMode | null>(null);
 
     useEffect(() => {
         if (!editing && status?.temperature != null) {
@@ -30,7 +35,7 @@ export function ControlsCard({ status }: Props) {
         try {
             await api.setTemperature(rounded);
         } catch (e) {
-            console.error("Failed to set temperature", e);
+            push(`Failed to set temperature: ${(e as Error).message}`, "error");
         }
     }
 
@@ -50,7 +55,8 @@ export function ControlsCard({ status }: Props) {
         try {
             await api.setWeather(w);
         } catch (e) {
-            console.error("Failed to set weather", e);
+            push(`Failed to set weather: ${(e as Error).message}`, "error");
+            setLocalWeather(null);
         }
     }
 
@@ -59,30 +65,23 @@ export function ControlsCard({ status }: Props) {
         try {
             await api.setMode(mode);
         } catch (e) {
-            console.error("Failed to set mode", e);
+            push(`Failed to set mode: ${(e as Error).message}`, "error");
+            setLocalMode(null);
         }
     }
 
-    const [localWeather, setLocalWeather] = useState<Weather | null>(null);
-    const [localMode, setLocalMode] = useState<SimulationMode | null>(null);
+    const weatherOverride = localWeather && status?.weather !== localWeather ? localWeather : null;
+    const modeOverride = localMode && status?.simulationMode !== localMode ? localMode : null;
 
-    useEffect(() => {
-        if (localWeather && status?.weather === localWeather) setLocalWeather(null);
-    }, [status?.weather, localWeather]);
-    useEffect(() => {
-        if (localMode && status?.simulationMode === localMode) setLocalMode(null);
-    }, [status?.simulationMode, localMode]);
-
-    const currentMode = localMode ?? status?.simulationMode;
-    const currentWeather = localWeather ?? status?.weather;
-
+    const currentMode = modeOverride ?? status?.simulationMode;
+    const currentWeather = weatherOverride ?? status?.weather;
     const isFixed = currentMode === "FIXED";
 
     return (
         <div className="neu-card p-6">
             <h2 className="section-title mb-5">Controls</h2>
 
-            <div className="flex items-baseline justify-between mb-3">
+            <div className="flex items-baseline justify-between mb-1">
                 <p className="topbar-label">Temperature</p>
                 {!isFixed && (
                     <span className="text-[10px] tracking-wider text-ink-soft/70 italic normal-case">
@@ -90,7 +89,10 @@ export function ControlsCard({ status }: Props) {
                     </span>
                 )}
             </div>
-            <div className={`flex items-center gap-4 mb-2 ${!isFixed ? "opacity-50 pointer-events-none" : ""}`}>
+            <Hint>
+                Adjust room temperature. Above 20°C turns AC on. At or below 20°C the AC stays off.
+            </Hint>
+            <div className={`flex items-center gap-4 mt-3 mb-2 ${!isFixed ? "opacity-50 pointer-events-none" : ""}`}>
                 <button
                     onClick={() => pushTemp(target - TEMP_STEP)}
                     className="neu-btn w-10 h-10 text-xl shrink-0"
@@ -104,12 +106,21 @@ export function ControlsCard({ status }: Props) {
                     <div className="flex items-baseline justify-between mb-2">
                         <span className="text-[10px] tracking-widest text-ink-soft uppercase">Target</span>
                         <span className="font-(family-name:--font-digit) text-2xl text-ink leading-none">
-              {target.toFixed(1)}°
-            </span>
+                            {target.toFixed(1)}°
+                        </span>
                     </div>
-                    <input type="range" min={TEMP_MIN} max={TEMP_MAX} step={TEMP_STEP} value={target} onChange={onSliderChange}
-                        onMouseUp={onSliderRelease} onTouchEnd={onSliderRelease}
-                        onKeyUp={onSliderRelease} disabled={!isFixed} className="temp-slider w-full"
+                    <input
+                        type="range"
+                        min={TEMP_MIN}
+                        max={TEMP_MAX}
+                        step={TEMP_STEP}
+                        value={target}
+                        onChange={onSliderChange}
+                        onMouseUp={onSliderRelease}
+                        onTouchEnd={onSliderRelease}
+                        onKeyUp={onSliderRelease}
+                        disabled={!isFixed}
+                        className="temp-slider w-full"
                     />
                     <div className="flex justify-between text-[10px] text-ink-soft/70 mt-1">
                         <span>{TEMP_MIN}°</span>
@@ -129,16 +140,19 @@ export function ControlsCard({ status }: Props) {
 
             <div className="mb-6 h-2" />
 
-            <p className="topbar-label mb-3">Weather</p>
-            <div className={`neu-inset p-1.5 grid grid-cols-4 gap-1 mb-6 ${!isFixed ? "opacity-50 pointer-events-none" : ""}`}>
+            <p className="topbar-label mb-1">Weather</p>
+            <Hint>
+                Pick the weather. SUNNY weather closes the blinds. Any other condition opens them unless a movie is playing.
+            </Hint>
+            <div className={`neu-inset p-1.5 grid grid-cols-4 gap-1 mt-3 mb-6 ${!isFixed ? "opacity-50 pointer-events-none" : ""}`}>
                 <WeatherPill label="Sunny"  active={currentWeather === "SUNNY"}  onClick={() => chooseWeather("SUNNY")}  glyph={<SunGlyph />} />
                 <WeatherPill label="Rainy"  active={currentWeather === "RAINY"}  onClick={() => chooseWeather("RAINY")}  glyph={<DropGlyph />} />
                 <WeatherPill label="Cloudy" active={currentWeather === "CLOUDY"} onClick={() => chooseWeather("CLOUDY")} glyph={<CloudGlyph />} />
                 <WeatherPill label="Snowy"  active={currentWeather === "SNOWY"}  onClick={() => chooseWeather("SNOWY")}  glyph={<SnowGlyph />} />
             </div>
 
-            <p className="topbar-label mb-3">Simulation Mode</p>
-            <div className="neu-inset p-1.5 grid grid-cols-4 gap-1">
+            <p className="topbar-label mb-1">Simulation Mode</p>
+            <div className="neu-inset p-1.5 grid grid-cols-4 gap-1 mt-3">
                 <ModePill label="Internal" active={currentMode === "INTERNAL"}      onClick={() => chooseMode("INTERNAL")} />
                 <ModePill label="MQTT"     active={currentMode === "EXTERNAL_MQTT"} onClick={() => chooseMode("EXTERNAL_MQTT")} />
                 <ModePill label="Disabled" active={currentMode === "DISABLED"}      onClick={() => chooseMode("DISABLED")} />
@@ -185,17 +199,7 @@ export function ControlsCard({ status }: Props) {
     }
 }
 
-function WeatherPill({
-                         label,
-                         active,
-                         glyph,
-                         onClick,
-                     }: {
-    label: string;
-    active: boolean;
-    glyph: React.ReactNode;
-    onClick: () => void;
-}) {
+function WeatherPill({label, active, glyph, onClick,}: { label: string; active: boolean; glyph: React.ReactNode; onClick: () => void; }) {
     return (
         <button
             onClick={onClick}
@@ -211,15 +215,7 @@ function WeatherPill({
     );
 }
 
-function ModePill({
-                      label,
-                      active,
-                      onClick,
-                  }: {
-    label: string;
-    active: boolean;
-    onClick: () => void;
-}) {
+function ModePill({label, active, onClick,}: { label: string; active: boolean; onClick: () => void; }) {
     return (
         <button
             onClick={onClick}

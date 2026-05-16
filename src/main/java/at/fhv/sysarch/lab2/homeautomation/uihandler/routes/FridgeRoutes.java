@@ -2,9 +2,17 @@ package at.fhv.sysarch.lab2.homeautomation.uihandler.routes;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.Fridge;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
+import at.fhv.sysarch.lab2.homeautomation.devices.model.OrderLineItem;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Product;
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidOrderException;
-import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.*;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.CapacityDto;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.OrderDto;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.OrderHistoryDto;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.OrderItemDto;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.OrderRequest;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.ProductDto;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.ProductsDto;
+import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.SuccessResponse;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.actor.typed.javadsl.AskPattern;
@@ -80,8 +88,8 @@ public class FridgeRoutes extends AllDirectives {
 
     private OrderDto toOrderDto(Order order) {
         List<OrderItemDto> itemDtos = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : order.items().entrySet()) {
-            itemDtos.add(new OrderItemDto(entry.getKey(), entry.getKey(), entry.getValue(), 0.0));
+        for (OrderLineItem item : order.lineItems()) {
+            itemDtos.add(new OrderItemDto(item.productId(), item.productName(), item.quantity(), item.unitPrice()));
         }
         return new OrderDto(
                 order.orderId(),

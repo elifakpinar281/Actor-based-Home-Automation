@@ -6,7 +6,6 @@ option java_multiple_files = true;
 option java_package = "at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing";
 option java_outer_classname = "OrderProcessingProto";
 
-// Order Service für externe Order-Verarbeitung
 service OrderService {
   rpc ProcessOrder(OrderRequest) returns (OrderResponse);
 }
@@ -21,7 +20,6 @@ message OrderItem {
   double unit_price = 3;
 }
 
-// Response mit Receipt nach erfolgreicher Verarbeitung
 message OrderResponse {
   bool success = 1;
   string order_id = 2;
@@ -29,7 +27,6 @@ message OrderResponse {
   OrderReceipt receipt = 4;
 }
 
-// Receipt Details
 message OrderReceipt {
   string order_id = 1;
   repeated OrderItem items = 2;

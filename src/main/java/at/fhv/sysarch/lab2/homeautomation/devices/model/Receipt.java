@@ -8,7 +8,7 @@ public record Receipt(
         String receiptId,
         String orderId,
         LocalDateTime timestamp,
-        Map<String, Integer> items,
+        List<OrderLineItem> lineItems,
         double totalPrice
 ) {
 
@@ -16,16 +16,16 @@ public record Receipt(
         Objects.requireNonNull(receiptId, "receiptId");
         Objects.requireNonNull(orderId, "orderId");
         Objects.requireNonNull(timestamp, "timestamp");
-        Objects.requireNonNull(items, "items");
-        items = Collections.unmodifiableMap(new HashMap<>(items));
+        Objects.requireNonNull(lineItems, "lineItems");
+        lineItems = List.copyOf(lineItems);
     }
 
-    public static Receipt create(String orderId, Map<String, Integer> items, double totalPrice) {
+    public static Receipt create(String orderId, List<OrderLineItem> lineItems, double totalPrice) {
         return new Receipt(
                 UUID.randomUUID().toString(),
                 orderId,
                 LocalDateTime.now(),
-                items,
+                lineItems,
                 totalPrice
         );
     }

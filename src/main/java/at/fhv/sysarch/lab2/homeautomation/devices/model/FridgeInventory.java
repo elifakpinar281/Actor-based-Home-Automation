@@ -12,10 +12,10 @@ public final class FridgeInventory {
                 new Product("P003", "Sourdough",0.55, 3.20, 0),
                 new Product("P004", "Gruyère",0.30, 5.80, 1),
                 new Product("P005", "Eggs (6er)", 0.42, 2.10, 1),
-                new Product("P006", "Chicken Breast", 0.50, 7.40, 0),
+                new Product("P006", "Chicken Breast", 0.50, 7.40, 3),
                 new Product("P007", "Salmon Filet",0.35, 8.90, 8),
                 new Product("P008", "Mineral Water",1.50, 0.99, 3),
-                new Product("P009", "Carrots",1.00, 1.80, 0)
+                new Product("P009", "Carrots",1.00, 1.80, 2)
         );
     }
 }

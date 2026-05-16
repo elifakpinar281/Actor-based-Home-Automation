@@ -19,8 +19,7 @@ export function useProducts(intervalMs: number = 3000) {
     }, []);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        reload();
+        queueMicrotask(reload);
         const id = setInterval(reload, intervalMs);
         return () => clearInterval(id);
     }, [intervalMs, reload]);
