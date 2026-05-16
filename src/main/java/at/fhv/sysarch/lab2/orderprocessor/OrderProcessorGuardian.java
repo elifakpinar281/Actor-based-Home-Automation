@@ -1,5 +1,6 @@
 package at.fhv.sysarch.lab2.orderprocessor;
 
+import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.OrderServiceHandlerFactory;
 import org.apache.pekko.actor.typed.*;
 import org.apache.pekko.actor.typed.javadsl.*;
 import org.apache.pekko.http.javadsl.Http;
@@ -10,6 +11,9 @@ import java.util.concurrent.CompletionStage;
 public class OrderProcessorGuardian extends AbstractBehavior<OrderProcessorGuardian.Command> {
     public interface Command {}
 
+    private static final String GRPC_HOST = "127.0.0.1";
+    private static final int GRPC_PORT = 50051;
+
     public static Behavior<Command> create() {
         return Behaviors.setup(OrderProcessorGuardian::new);
     }
@@ -17,27 +21,26 @@ public class OrderProcessorGuardian extends AbstractBehavior<OrderProcessorGuard
     private OrderProcessorGuardian(ActorContext<Command> context) {
         super(context);
 
-        // Interne Actors des externen Systems
-        ActorRef<PersistenceActor.Command> persistenceActor =
-                context.spawn(PersistenceActor.create(), "persistenceActor");
+        ActorRef<PersistenceActor.Command> persistenceActor = context.spawn(PersistenceActor.create(), "persistenceActor");
+        ActorRef<ValidationActor.Command> validationActor = context.spawn(ValidationActor.create(persistenceActor), "validationActor");
+        startGrpcServer(validationActor);
+    }
 
-        ActorRef<ValidationActor.Command> validationActor =
-                context.spawn(ValidationActor.create(persistenceActor), "validationActor");
+    private void startGrpcServer(ActorRef<ValidationActor.Command> validationActor) {
+        OrderServiceActorImpl serviceImpl = new OrderServiceActorImpl(getContext().getSystem(), validationActor);
 
-        // gRPC Server starten
-        OrderServiceActorImpl serviceImpl =
-                new OrderServiceActorImpl(context.getSystem(), validationActor);
+        CompletionStage<ServerBinding> binding = Http.get(getContext().getSystem())
+                .newServerAt(GRPC_HOST, GRPC_PORT)
+                .bind(OrderServiceHandlerFactory.create(serviceImpl, getContext().getSystem()));
 
-        CompletionStage<ServerBinding> bound = Http.get(context.getSystem())
-                .newServerAt("127.0.0.1", 50051)
-                .bind(
-                        at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing
-                                .OrderServiceHandlerFactory.create(serviceImpl, context.getSystem())
-                );
-
-        bound.thenAccept(binding ->
-                context.getLog().info("gRPC OrderProcessor bound to: {}", binding.localAddress())
-        );
+        binding.whenComplete((serverBinding, error) -> {
+            if (error != null) {
+                getContext().getLog().error("Failed to bind gRPC server on {}:{} - {}", GRPC_HOST, GRPC_PORT, error.getMessage());
+                getContext().getSystem().terminate();
+            } else {
+                getContext().getLog().info("gRPC OrderProcessor server bound to {}", serverBinding.localAddress());
+            }
+        });
     }
 
     @Override

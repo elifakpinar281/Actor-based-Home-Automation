@@ -13,55 +13,32 @@ import org.apache.pekko.grpc.GrpcClientSettings;
 import java.util.Map;
 
 public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcessorCommand> {
-
     public interface OrderProcessorCommand {}
 
-    public record ProcessOrder(
-            Order order,
-            Map<String, Integer> items,
-            Map<String, Double> prices,  // NEU: productId → unitPrice
-            ActorRef<Fridge.OrderResponse> replyTo,
-            String fridgeId,
-            ActorRef<Fridge.FridgeCommand> fridgeRef
-    ) implements OrderProcessorCommand {}
+    public record ProcessOrder(Order order, Map<String, Double> unitPrices, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
 
-    // Wird intern als Adapter für die async gRPC-Antwort genutzt
-    private record GrpcResponse(
-            OrderResponse response, Order order,
-            ActorRef<Fridge.OrderResponse> replyTo,
-            ActorRef<Fridge.FridgeCommand> fridgeRef
-    ) implements OrderProcessorCommand {}
-
-    private record GrpcFailure(
-            Throwable error, Order order,
-            ActorRef<Fridge.OrderResponse> replyTo,
-            ActorRef<Fridge.FridgeCommand> fridgeRef
-    ) implements OrderProcessorCommand {}
+    private record GrpcResponse(OrderResponse response, Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
+    private record GrpcFailure(Throwable error, Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
 
     private final OrderServiceClient grpcClient;
+    private final ActorRef<Fridge.FridgeCommand> fridge;
 
-    public static Behavior<OrderProcessorCommand> create() {
+    public static Behavior<OrderProcessorCommand> create(ActorRef<Fridge.FridgeCommand> fridge) {
         return Behaviors.setup(context -> {
-            context.getLog().info("OrderProcessor: SETUP STARTED");
             ActorSystem<?> system = context.getSystem();
-            try {
-                context.getLog().info("OrderProcessor: creating gRPC client with config...");
-                OrderServiceClient client = OrderServiceClient.create(
-                        GrpcClientSettings.fromConfig("orderprocessing.OrderService", system),
-                        system
-                );
-                context.getLog().info("OrderProcessor: gRPC client created OK");
-                return new OrderProcessor(context, client);
-            } catch (Exception e) {
-                context.getLog().error("OrderProcessor: FAILED: {}", e.getMessage(), e);
-                throw e;
-            }
+            OrderServiceClient client = OrderServiceClient.create(
+                    GrpcClientSettings.fromConfig("orderprocessing.OrderService", system),
+                    system
+            );
+            context.getLog().debug("OrderProcessor session started");
+            return new OrderProcessor(context, client, fridge);
         });
     }
 
-    private OrderProcessor(ActorContext<OrderProcessorCommand> context, OrderServiceClient client) {
+    private OrderProcessor(ActorContext<OrderProcessorCommand> context, OrderServiceClient client, ActorRef<Fridge.FridgeCommand> fridge) {
         super(context);
         this.grpcClient = client;
+        this.fridge = fridge;
     }
 
     @Override
@@ -74,71 +51,51 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
     }
 
     private Behavior<OrderProcessorCommand> onProcessOrder(ProcessOrder msg) {
-        getContext().getLog().info("OrderProcessor: onProcessOrder called, items: {}", msg.items.size());
-
         OrderRequest.Builder requestBuilder = OrderRequest.newBuilder();
-
-        for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
-            getContext().getLog().info("OrderProcessor: adding item {} qty {} price {}",
-                    entry.getKey(), entry.getValue(), msg.prices.get(entry.getKey()));
+        for (Map.Entry<String, Integer> entry : msg.order().items().entrySet()) {
             requestBuilder.addItems(
                     OrderItem.newBuilder()
                             .setProductId(entry.getKey())
                             .setQuantity(entry.getValue())
-                            .setUnitPrice(msg.prices.get(entry.getKey()))
+                            .setUnitPrice(msg.unitPrices().getOrDefault(entry.getKey(), 0.0))
                             .build()
             );
         }
 
-        getContext().getLog().info("OrderProcessor: sending gRPC request...");
+        getContext().getLog().info("OrderProcessor: sending order {} via gRPC ({} items)",
+                msg.order().orderId(), msg.order().items().size());
 
-        getContext().pipeToSelf( // ?
+        // ist pipe gut?
+        getContext().pipeToSelf(
                 grpcClient.processOrder(requestBuilder.build()),
-                (response, error) -> {
-                    if (error != null) {
-                        getContext().getLog().error("OrderProcessor: gRPC error in pipeToSelf: {}", error.getMessage());
-                        return new GrpcFailure(error, msg.order, msg.replyTo, msg.fridgeRef);
-                    }
-                    getContext().getLog().info("OrderProcessor: gRPC response received, success={}", response.getSuccess());
-                    return new GrpcResponse(response, msg.order, msg.replyTo, msg.fridgeRef);
-                }
+                (response, error) -> error != null
+                        ? new GrpcFailure(error, msg.order(), msg.replyTo())
+                        : new GrpcResponse(response, msg.order(), msg.replyTo())
         );
         return Behaviors.same();
     }
 
     private Behavior<OrderProcessorCommand> onGrpcResponse(GrpcResponse msg) {
-        getContext().getLog().info("OrderProcessor: response success={}, message='{}'",
-                msg.response().getSuccess(), msg.response().getMessage());
-        if (msg.response.getSuccess()) {
-            OrderReceipt grpcReceipt = msg.response.getReceipt();
-            Receipt receipt = new Receipt(
-                    msg.order.getOrderId(),
-                    msg.order.getItems(),
-                    grpcReceipt.getTotalPrice()
+        if (msg.response().getSuccess()) {
+            Receipt receipt = Receipt.create(
+                    msg.order().orderId(),
+                    msg.order().items(),
+                    msg.response().getReceipt().getTotalPrice()
             );
-            msg.order.setStatus(Order.OrderStatus.COMPLETED);
-            msg.order.setReceipt(receipt.getReceiptId());
-
-            msg.fridgeRef.tell(new Fridge.OrderCompleted(msg.order, receipt));
-
-            if (msg.replyTo != null) {
-                msg.replyTo.tell(new Fridge.OrderResponse(true, "Order processed via gRPC", receipt));
-            }
+            getContext().getLog().info("OrderProcessor: order {} completed by external system", msg.order().orderId());
+            fridge.tell(new Fridge.OrderCompleted(msg.order(), receipt, msg.replyTo()));
         } else {
-            msg.order.setStatus(Order.OrderStatus.FAILED);
-            if (msg.replyTo != null) {
-                msg.replyTo.tell(new Fridge.OrderResponse(false, msg.response.getMessage(), null));
-            }
+            String reason = "External processor rejected: " + msg.response().getMessage();
+            getContext().getLog().warn("OrderProcessor: order {} rejected — {}", msg.order().orderId(), msg.response().getMessage());
+            fridge.tell(new Fridge.OrderFailed(msg.order(), reason, msg.replyTo()));
         }
         return Behaviors.stopped();
     }
 
     private Behavior<OrderProcessorCommand> onGrpcFailure(GrpcFailure msg) {
-        getContext().getLog().error("gRPC call failed: {}", msg.error.getMessage());
-        msg.order.setStatus(Order.OrderStatus.FAILED);
-        if (msg.replyTo != null) {
-            msg.replyTo.tell(new Fridge.OrderResponse(false, "gRPC error: " + msg.error.getMessage(), null));
-        }
+        String reason = "gRPC communication failed: " + msg.error().getMessage();
+        getContext().getLog().error("OrderProcessor: order {} failed — {}", msg.order().orderId(), msg.error().getMessage());
+        fridge.tell(new Fridge.OrderFailed(msg.order(), reason, msg.replyTo()));
         return Behaviors.stopped();
     }
 }

@@ -2,33 +2,33 @@ package at.fhv.sysarch.lab2.homeautomation.devices.model;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
-public class Receipt implements Serializable {
-    private final String receiptId;
-    private final String orderId;
-    private final LocalDateTime timestamp;
-    private final Map<String, Integer> items;  // productId -> quantity
-    private final double totalPrice;
-    private final String status;
+public record Receipt(
+        String receiptId,
+        String orderId,
+        LocalDateTime timestamp,
+        Map<String, Integer> items,
+        double totalPrice
+) implements Serializable {
 
-    public Receipt(String orderId, Map<String, Integer> items, double totalPrice) {
-        this.receiptId = UUID.randomUUID().toString();
-        this.orderId = orderId;
-        this.timestamp = LocalDateTime.now();
-        this.items = new HashMap<>(items);
-        this.totalPrice = totalPrice;
-        this.status = "COMPLETED";
+    public Receipt {
+        Objects.requireNonNull(receiptId, "receiptId");
+        Objects.requireNonNull(orderId, "orderId");
+        Objects.requireNonNull(timestamp, "timestamp");
+        Objects.requireNonNull(items, "items");
+        items = Collections.unmodifiableMap(new HashMap<>(items));
     }
 
-    public String getReceiptId() { return receiptId; }
-    public String getOrderId() { return orderId; }
-    public LocalDateTime getTimestamp() { return timestamp; }
-    public Map<String, Integer> getItems() { return new HashMap<>(items); }
-    public double getTotalPrice() { return totalPrice; }
-    public String getStatus() { return status; }
+    public static Receipt create(String orderId, Map<String, Integer> items, double totalPrice) {
+        return new Receipt(
+                UUID.randomUUID().toString(),
+                orderId,
+                LocalDateTime.now(),
+                items,
+                totalPrice
+        );
+    }
 
     @Override
     public String toString() {

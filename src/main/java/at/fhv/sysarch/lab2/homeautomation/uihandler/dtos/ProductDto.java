@@ -6,5 +6,4 @@ public record ProductDto(
         double weight,
         double price,
         int quantity
-) {
-}
+) {}

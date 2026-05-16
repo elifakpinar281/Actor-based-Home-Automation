@@ -20,5 +20,7 @@ public enum ErrorCode {
     AC001,
     BLINDS001,
 
-    MODE001
+    MODE001,
+
+    REQUEST001
 }

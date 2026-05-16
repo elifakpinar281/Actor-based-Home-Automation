@@ -5,5 +5,4 @@ public record CapacityDto(
         int maxItems,
         double currentWeight,
         double maxWeight
-) {
-}
+) {}

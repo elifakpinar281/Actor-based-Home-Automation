@@ -9,5 +9,4 @@ public record StatusDto(
         boolean blindsClosed,
         boolean moviePlaying,
         String currentMovie
-) {
-}
+) {}

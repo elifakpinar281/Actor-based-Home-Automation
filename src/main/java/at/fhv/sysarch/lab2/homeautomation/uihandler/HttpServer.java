@@ -33,8 +33,8 @@ public class HttpServer extends AllDirectives {
     private final StatusRoutes statusRoutes;
 
     public HttpServer(ActorRef<EnvironmentCoordinator.Command> environmentCoordinator, ActorRef<Fridge.FridgeCommand> fridgeActor,
-            ActorRef<MediaStation.MediaStationCommand> mediaStationActor, ActorRef<Blinds.BlindsCommand> blindsActor,
-            ActorRef<AirCondition.AirConditionCommand> airConditionActor, ActorSystem<?> system) {
+                      ActorRef<MediaStation.MediaStationCommand> mediaStationActor, ActorRef<Blinds.BlindsCommand> blindsActor,
+                      ActorRef<AirCondition.AirConditionCommand> airConditionActor, ActorSystem<?> system) {
         this.homePage = loadHomePage();
         this.environmentRoutes = new EnvironmentRoutes(environmentCoordinator, airConditionActor);
         this.fridgeRoutes = new FridgeRoutes(fridgeActor, system);

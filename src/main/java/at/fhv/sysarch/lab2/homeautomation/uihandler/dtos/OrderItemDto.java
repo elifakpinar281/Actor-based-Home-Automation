@@ -5,5 +5,4 @@ public record OrderItemDto(
         String productName,
         int quantity,
         double unitPrice
-) {
-}
+) {}

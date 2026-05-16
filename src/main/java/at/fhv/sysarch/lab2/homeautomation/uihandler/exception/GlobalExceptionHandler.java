@@ -1,18 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.uihandler.exception;
 
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.DomainException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.FridgeException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidModeException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidOrderException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidTemperatureException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidWeatherConditionException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.KeyNotFoundException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttConnectionException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttMessageParseException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.OrderProcessingException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.ProductNotAvailableException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.SimulationNotActiveException;
-import at.fhv.sysarch.lab2.homeautomation.uihandler.exception.ErrorResponse;
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.*;
 import org.apache.pekko.http.javadsl.marshallers.jackson.Jackson;
 import org.apache.pekko.http.javadsl.model.StatusCode;
 import org.apache.pekko.http.javadsl.model.StatusCodes;
@@ -32,37 +20,36 @@ public final class GlobalExceptionHandler extends AllDirectives {
     }
 
     private ExceptionHandler buildHandler() {
-        return ExceptionHandler.newBuilder().match(InvalidTemperatureException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
-                .match(InvalidWeatherConditionException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
-                .match(InvalidModeException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
+        return ExceptionHandler.newBuilder()
+                .match(InvalidRequestException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
                 .match(InvalidOrderException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
-                .match(MqttMessageParseException.class,ex -> respond(StatusCodes.BAD_REQUEST, ex))
+                .match(InvalidModeException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
+                .match(InvalidTemperatureException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
+                .match(InvalidWeatherConditionException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
+                .match(MqttMessageParseException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
 
-                .match(KeyNotFoundException.class,ex -> respond(StatusCodes.NOT_FOUND, ex))
-                .match(ProductNotAvailableException.class,ex -> respond(StatusCodes.NOT_FOUND, ex))
+                .match(ProductNotAvailableException.class, ex -> respond(StatusCodes.NOT_FOUND, ex))
 
-                .match(FridgeException.class,ex -> respond(StatusCodes.UNPROCESSABLE_ENTITY, ex))
-                .match(OrderProcessingException.class,ex -> respond(StatusCodes.UNPROCESSABLE_ENTITY, ex))
+                .match(FridgeException.class, ex -> respond(StatusCodes.UNPROCESSABLE_ENTITY, ex))
 
-                .match(MqttConnectionException.class,ex -> respond(StatusCodes.SERVICE_UNAVAILABLE, ex))
-                .match(SimulationNotActiveException.class,ex -> respond(StatusCodes.SERVICE_UNAVAILABLE, ex))
+                .match(MqttConnectionException.class, ex -> respond(StatusCodes.SERVICE_UNAVAILABLE, ex))
+                .match(SimulationNotActiveException.class, ex -> respond(StatusCodes.SERVICE_UNAVAILABLE, ex))
 
                 .match(NumberFormatException.class, ex -> {
-                    log.warn("Invalid number format in request parameter: {}", ex.getMessage());
-                    return complete(StatusCodes.BAD_REQUEST, new ErrorResponse("INVALID_PARAMETER", "Invalid number: " + ex.getMessage()),
+                    log.warn("Invalid number in request parameter: {}", ex.getMessage());
+                    return complete(StatusCodes.BAD_REQUEST, new ErrorResponse("REQUEST001", "Invalid number: " + ex.getMessage()),
                             Jackson.marshaller());
                 })
-
                 .match(IllegalArgumentException.class, ex -> {
                     log.warn("Bad request: {}", ex.getMessage());
-                    return complete(StatusCodes.BAD_REQUEST, new ErrorResponse("GENERIC_BAD_REQUEST", ex.getMessage()),
+                    return complete(StatusCodes.BAD_REQUEST, new ErrorResponse("REQUEST001", ex.getMessage()),
                             Jackson.marshaller());
                 })
 
                 .match(DomainException.class, ex -> respond(StatusCodes.INTERNAL_SERVER_ERROR, ex))
 
-                .matchAny(t -> {
-                    log.error("Unhandled exception in HTTP route", t);
+                .matchAny(throwable -> {
+                    log.error("Unhandled exception in HTTP route", throwable);
                     return complete(StatusCodes.INTERNAL_SERVER_ERROR, new ErrorResponse("INTERNAL_ERROR", "An unexpected error occurred"),
                             Jackson.marshaller());
                 })

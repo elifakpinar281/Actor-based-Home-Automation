@@ -10,37 +10,31 @@ import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
 import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
+import java.util.Optional;
+
 public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
-    public interface BlindsCommand { }
+    public interface BlindsCommand {}
 
-    public record WeatherUpdate(WeatherCondition condition) implements BlindsCommand { }
-    public record MovieStatusChanged(boolean isPlaying) implements BlindsCommand { }
-    public record GetStatus(ActorRef<StatusResponse> replyTo) implements BlindsCommand { }
+    public record WeatherUpdate(WeatherCondition condition) implements BlindsCommand {}
+    public record MovieStatusChanged(boolean isPlaying) implements BlindsCommand {}
+    public record GetStatus(ActorRef<StatusResponse> replyTo) implements BlindsCommand {}
 
-    public record StatusResponse(boolean areClosed) { }
+    public record StatusResponse(boolean areClosed) {}
+    public static final ServiceKey<BlindsCommand> SERVICE_KEY = ServiceKey.create(BlindsCommand.class, "blinds");
 
     public static Behavior<BlindsCommand> create(String identifier) {
         return Behaviors.setup(context -> new Blinds(context, identifier));
     }
 
     private final String identifier;
-    private boolean areClosed = false;
+    private Optional<WeatherCondition> currentWeather = Optional.empty();
     private boolean isMoviePlaying = false;
-    // Initial-State matched dem EnvironmentSwitch-Default (SUNNY), damit
-    // Blinds-State und tatsächliche Environment-State von Anfang an konsistent sind.
-    private WeatherCondition currentWeather = WeatherCondition.SUNNY;
+    private boolean areClosed = false;
 
-    public static final ServiceKey<BlindsCommand> SERVICE_KEY =
-            ServiceKey.create(BlindsCommand.class, "blinds");
-
-
-    public Blinds(ActorContext<BlindsCommand> context, String identifier) {
+    private Blinds(ActorContext<BlindsCommand> context, String identifier) {
         super(context);
         this.identifier = identifier;
-        // Initial-State direkt anhand der Defaults berechnen (sunny → closed)
-        this.areClosed = (currentWeather == WeatherCondition.SUNNY);
-        getContext().getLog().info("Blinds Actor '{}' started - initial state: {}",
-                identifier, areClosed ? "CLOSED" : "OPEN");
+        getContext().getLog().info("Blinds '{}' started — initial state: OPEN (awaiting first weather update)", identifier);
     }
 
     @Override
@@ -54,43 +48,43 @@ public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
     }
 
     private Behavior<BlindsCommand> onWeatherUpdate(WeatherUpdate msg) {
-        this.currentWeather = msg.condition;
+        this.currentWeather = Optional.of(msg.condition());
         updateBlindsState();
         return Behaviors.same();
     }
 
     private Behavior<BlindsCommand> onMovieStatusChanged(MovieStatusChanged msg) {
-        this.isMoviePlaying = msg.isPlaying;
+        this.isMoviePlaying = msg.isPlaying();
         updateBlindsState();
         return Behaviors.same();
     }
 
     private Behavior<BlindsCommand> onGetStatus(GetStatus msg) {
-        msg.replyTo.tell(new StatusResponse(areClosed));
+        msg.replyTo().tell(new StatusResponse(areClosed));
         return Behaviors.same();
     }
 
     private void updateBlindsState() {
         boolean shouldBeClosed;
-
         if (isMoviePlaying) {
             shouldBeClosed = true;
-        } else if (currentWeather == WeatherCondition.SUNNY) {
-            shouldBeClosed = true;
         } else {
-            shouldBeClosed = false;
+            shouldBeClosed = currentWeather.map(condition -> condition == WeatherCondition.SUNNY)
+                    .orElse(false);
         }
 
         if (shouldBeClosed != areClosed) {
             areClosed = shouldBeClosed;
-            String action = areClosed ? "CLOSED" : "OPENED";
-            String reason = isMoviePlaying ? "movie playing" : "weather: " + currentWeather;
-            getContext().getLog().info("Blinds '{}': {} - Reason: {}", identifier, action, reason);
+            String reason = isMoviePlaying
+                    ? "movie playing"
+                    : "weather: " + currentWeather.map(Enum::name).orElse("unknown");
+            getContext().getLog().info("Blinds '{}': {} (reason: {})",
+                    identifier, areClosed ? "CLOSED" : "OPENED", reason);
         }
     }
 
-    private Blinds onPostStop() {
-        getContext().getLog().info("Blinds Actor '{}' stopped", identifier);
+    private Behavior<BlindsCommand> onPostStop() {
+        getContext().getLog().info("Blinds '{}' stopped", identifier);
         return this;
     }
 }

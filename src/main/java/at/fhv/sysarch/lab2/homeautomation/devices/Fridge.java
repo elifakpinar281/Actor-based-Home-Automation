@@ -1,12 +1,10 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
+import at.fhv.sysarch.lab2.homeautomation.devices.model.OrderStatus;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Product;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Receipt;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.FridgeException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InsufficientSpaceException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InsufficientWeightCapacityException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidOrderException;
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.*;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.PostStop;
@@ -23,25 +21,31 @@ import java.util.Map;
 
 public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
-    public interface FridgeCommand { }
+    public interface FridgeCommand {}
 
-    public record GetProducts(ActorRef<ProductsResponse> replyTo) implements FridgeCommand { }
-    public record GetOrderHistory(ActorRef<OrderHistoryResponse> replyTo) implements FridgeCommand { }
-    public record GetCapacity(ActorRef<CapacityResponse> replyTo) implements FridgeCommand { }
-    public record ConsumeProduct(String productId, int quantity) implements FridgeCommand { }
-    public record OrderProducts(Map<String, Integer> items, ActorRef<OrderResponse> replyTo) implements FridgeCommand { }
+    public record GetProducts(ActorRef<ProductsResponse> replyTo) implements FridgeCommand {}
+    public record GetOrderHistory(ActorRef<OrderHistoryResponse> replyTo) implements FridgeCommand {}
+    public record GetCapacity(ActorRef<CapacityResponse> replyTo) implements FridgeCommand {}
+    public record ConsumeProduct(String productId, int quantity) implements FridgeCommand {}
+    public record OrderProducts(Map<String, Integer> items, ActorRef<OrderResponse> replyTo) implements FridgeCommand {}
+    public record OrderCompleted(Order order, Receipt receipt, ActorRef<OrderResponse> replyTo) implements FridgeCommand {}
+    public record OrderFailed(Order order, String reason, ActorRef<OrderResponse> replyTo) implements FridgeCommand {}
 
-    public record ProductsResponse(List<Product> products) { }
-    public record OrderHistoryResponse(List<Order> orders) { }
-    public record CapacityResponse(int currentItems, int maxItems, double currentWeight, double maxWeight) { }
-    public record OrderResponse(boolean success, String message, Receipt receipt) { }
-    public record OrderCompleted(Order order, Receipt receipt) implements FridgeCommand {}
+    public record ProductsResponse(List<Product> products) {}
+    public record OrderHistoryResponse(List<Order> orders) {}
+    public record CapacityResponse(int currentItems, int maxItems, double currentWeight, double maxWeight) {}
+    public record OrderResponse(boolean success, String message, Receipt receipt) {}
 
-    public static Behavior<FridgeCommand> create(
-            String identifier, int maxItems, double maxWeightKg) {
-        return Behaviors.setup(context ->
-                new Fridge(context, identifier, maxItems, maxWeightKg)
-        );
+    public static final ServiceKey<FridgeCommand> SERVICE_KEY = ServiceKey.create(FridgeCommand.class, "fridge");
+
+    private static final int AUTO_REORDER_QUANTITY = 5;
+
+    public static Behavior<FridgeCommand> create(String identifier, int maxItems, double maxWeightKg) {
+        return Behaviors.setup(context -> new Fridge(context, identifier, maxItems, maxWeightKg, defaultInventory()));
+    }
+
+    public static Behavior<FridgeCommand> create(String identifier, int maxItems, double maxWeightKg, List<Product> initialInventory) {
+        return Behaviors.setup(context -> new Fridge(context, identifier, maxItems, maxWeightKg, initialInventory));
     }
 
     private final String identifier;
@@ -53,40 +57,35 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     private int currentItemCount = 0;
     private double currentWeightKg = 0.0;
 
-
-    public static final ServiceKey<FridgeCommand> SERVICE_KEY =
-            ServiceKey.create(FridgeCommand.class, "fridge");
-
-
-    public Fridge(ActorContext<FridgeCommand> context,
-                  String identifier,
-                  int maxItems,
-                  double maxWeightKg) {
+    private Fridge(ActorContext<FridgeCommand> context, String identifier, int maxItems, double maxWeightKg, List<Product> initialInventory) {
         super(context);
         this.identifier = identifier;
         this.maxItems = maxItems;
         this.maxWeightKg = maxWeightKg;
-        initializeSampleProducts();
-        getContext().getLog().info("Fridge Actor '{}' started - Max: {} items, {} kg",
-                identifier, maxItems, maxWeightKg);
+        for (Product product : initialInventory) {
+            addToInventory(product);
+        }
+        getContext().getLog().info("Fridge '{}' started — max: {} items, {} kg, initial: {} items / {} kg", identifier, maxItems, maxWeightKg, currentItemCount, currentWeightKg);
     }
 
-    private void initializeSampleProducts() {
-        addProduct(new Product("P001", "Milk",          1.03, 1.49, 2));
-        addProduct(new Product("P002", "Apples",        0.18, 0.40, 6));
-        addProduct(new Product("P003", "Sourdough",     0.55, 3.20, 0));
-        addProduct(new Product("P004", "Gruyère",       0.30, 5.80, 1));
-        addProduct(new Product("P005", "Eggs (6er)",    0.42, 2.10, 1));
-        addProduct(new Product("P006", "Chicken Breast",0.50, 7.40, 0));
-        addProduct(new Product("P007", "Salmon Filet",  0.35, 8.90, 8));
-        addProduct(new Product("P008", "Mineral Water", 1.50, 0.99, 3));
-        addProduct(new Product("P009", "Carrots",       1.00, 1.80, 0));
+    private static List<Product> defaultInventory() {
+        return List.of(
+                new Product("P001", "Milk",          1.03, 1.49, 2),
+                new Product("P002", "Apples",        0.18, 0.40, 6),
+                new Product("P003", "Sourdough",     0.55, 3.20, 0),
+                new Product("P004", "Gruyère",       0.30, 5.80, 1),
+                new Product("P005", "Eggs (6er)",    0.42, 2.10, 1),
+                new Product("P006", "Chicken Breast", 0.50, 7.40, 0),
+                new Product("P007", "Salmon Filet",  0.35, 8.90, 8),
+                new Product("P008", "Mineral Water", 1.50, 0.99, 3),
+                new Product("P009", "Carrots",       1.00, 1.80, 0)
+        );
     }
 
-    private void addProduct(Product product) {
-        inventory.put(product.getId(), product);
-        currentItemCount += product.getQuantity();
-        currentWeightKg += product.getTotalWeight();
+    private void addToInventory(Product product) {
+        inventory.put(product.id(), product);
+        currentItemCount += product.quantity();
+        currentWeightKg += product.totalWeight();
     }
 
     @Override
@@ -98,160 +97,165 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
                 .onMessage(ConsumeProduct.class, this::onConsumeProduct)
                 .onMessage(OrderProducts.class, this::onOrderProducts)
                 .onMessage(OrderCompleted.class, this::onOrderCompleted)
+                .onMessage(OrderFailed.class, this::onOrderFailed)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
     }
 
     private Behavior<FridgeCommand> onGetProducts(GetProducts msg) {
-        List<Product> products = new ArrayList<>(inventory.values());
-        msg.replyTo.tell(new ProductsResponse(products));
+        msg.replyTo().tell(new ProductsResponse(new ArrayList<>(inventory.values())));
         return Behaviors.same();
     }
 
     private Behavior<FridgeCommand> onGetOrderHistory(GetOrderHistory msg) {
-        List<Order> history = new ArrayList<>(orderHistory);
-        msg.replyTo.tell(new OrderHistoryResponse(history));
+        msg.replyTo().tell(new OrderHistoryResponse(new ArrayList<>(orderHistory)));
         return Behaviors.same();
     }
 
     private Behavior<FridgeCommand> onGetCapacity(GetCapacity msg) {
-        msg.replyTo.tell(new CapacityResponse(currentItemCount, maxItems, currentWeightKg, maxWeightKg));
+        msg.replyTo().tell(new CapacityResponse(currentItemCount, maxItems, currentWeightKg, maxWeightKg));
         return Behaviors.same();
     }
 
     private Behavior<FridgeCommand> onConsumeProduct(ConsumeProduct msg) {
-        Product product = inventory.get(msg.productId);
-
+        Product product = inventory.get(msg.productId());
         if (product == null) {
-            getContext().getLog().warn("Fridge '{}': Product {} not found", identifier, msg.productId);
+            getContext().getLog().warn("Fridge '{}': cannot consume — product {} not found", identifier, msg.productId());
+            return Behaviors.same();
+        }
+        if (product.quantity() < msg.quantity()) {
+            getContext().getLog().warn("Fridge '{}': cannot consume {} x {} — only {} available", identifier, msg.quantity(), product.name(), product.quantity());
             return Behaviors.same();
         }
 
-        if (product.getQuantity() < msg.quantity) {
-            getContext().getLog().warn("Fridge '{}': Not enough quantity of {}",
-                    identifier, product.getName());
-            return Behaviors.same();
+        Product updated = product.removeQuantity(msg.quantity());
+        inventory.put(updated.id(), updated);
+        currentItemCount -= msg.quantity();
+        currentWeightKg -= product.weight() * msg.quantity();
+
+        getContext().getLog().info("Fridge '{}': consumed {} x {} (remaining: {})", identifier, msg.quantity(), product.name(), updated.quantity());
+
+        if (updated.quantity() == 0) {
+            triggerAutoOrder(updated.id());
         }
-
-        product.removeQuantity(msg.quantity);
-        currentItemCount -= msg.quantity;
-        currentWeightKg -= (product.getWeight() * msg.quantity);
-
-        getContext().getLog().info("Fridge '{}': Consumed {} x {}",
-                identifier, msg.quantity, product.getName());
-
-        if (product.getQuantity() == 0) {
-            autoOrderProduct(product.getId(), 5);
-        }
-
         return Behaviors.same();
     }
 
     private Behavior<FridgeCommand> onOrderProducts(OrderProducts msg) {
-
         try {
-            validateOrder(msg.items);
-
-            double totalPrice = 0.0;
-            for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
-                Product p = inventory.get(entry.getKey());
-                totalPrice += p.getPrice() * entry.getValue();
-            }
-
-            Order order = new Order(msg.items);
-            order.setTotalPrice(totalPrice);
-            order.setStatus(Order.OrderStatus.PROCESSING);
-            orderHistory.add(order);
-
-            getContext().getLog().info("Fridge: about to spawn OrderProcessor for order");
-
-            ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor =
-                    getContext().spawnAnonymous(OrderProcessor.create());
-
-            getContext().getLog().info("Fridge: OrderProcessor spawned, sending ProcessOrder");
-
-
-            Map<String, Double> prices = new HashMap<>();
-            for (Map.Entry<String, Integer> entry : msg.items.entrySet()) {
-                prices.put(entry.getKey(), inventory.get(entry.getKey()).getPrice());
-            }
-
-            sessionProcessor.tell(
-                    new OrderProcessor.ProcessOrder(
-                            order, msg.items, prices, msg.replyTo, this.identifier, getContext().getSelf()
-                    )
-            );
-
-            return Behaviors.same();
-
-        } catch (FridgeException e) {
-            getContext().getLog().error("Order validation failed: {}", e.getMessage());
-            if (msg.replyTo != null) {
-                msg.replyTo.tell(new OrderResponse(false, e.getMessage(), null));
+            validateOrder(msg.items());
+        } catch (FridgeException ex) {
+            getContext().getLog().warn("Fridge '{}': order validation failed: {}", identifier, ex.getMessage());
+            if (msg.replyTo() != null) {
+                msg.replyTo().tell(new OrderResponse(false, ex.getMessage(), null));
             }
             return Behaviors.same();
         }
-    }
 
-    private Behavior<FridgeCommand> onOrderCompleted(OrderCompleted msg) {
-        completeOrder(msg.order(), msg.receipt());
+        double totalPrice = computeTotalPrice(msg.items());
+        Order order = Order.create(msg.items(), totalPrice).withStatus(OrderStatus.PROCESSING);
+        orderHistory.add(order);
+
+        Map<String, Double> unitPrices = new HashMap<>();
+        for (String productId : msg.items().keySet()) {
+            unitPrices.put(productId, inventory.get(productId).price());
+        }
+
+        ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor = getContext().spawnAnonymous(OrderProcessor.create(getContext().getSelf()));
+        sessionProcessor.tell(new OrderProcessor.ProcessOrder(order, unitPrices, msg.replyTo()));
+
+        getContext().getLog().info("Fridge '{}': dispatched order {} ({} items, €{}) to external processor", identifier, order.orderId(), msg.items().size(), totalPrice);
         return Behaviors.same();
     }
 
-    private void validateOrder(Map<String, Integer> items) throws FridgeException {
-        for (String productId : items.keySet()) {
-            if (!inventory.containsKey(productId)) {
-                throw new InvalidOrderException("Product " + productId + " not found");
-            }
-            if (items.get(productId) <= 0) {
-                throw new InvalidOrderException("Quantity must be positive");
+    private Behavior<FridgeCommand> onOrderCompleted(OrderCompleted msg) {
+        replaceOrderInHistory(msg.order().completed(msg.receipt().receiptId()));
+
+        for (Map.Entry<String, Integer> entry : msg.order().items().entrySet()) {
+            Product product = inventory.get(entry.getKey());
+            if (product != null) {
+                Product updated = product.addQuantity(entry.getValue());
+                inventory.put(updated.id(), updated);
+                currentItemCount += entry.getValue();
+                currentWeightKg += product.weight() * entry.getValue();
             }
         }
 
-        int totalNewItems = items.values().stream().mapToInt(Integer::intValue).sum();
+        getContext().getLog().info("Fridge '{}': order {} completed — {}", identifier, msg.order().orderId(), msg.receipt());
+
+        if (msg.replyTo() != null) {
+            msg.replyTo().tell(new OrderResponse(true, "Order processed successfully", msg.receipt()));
+        }
+        return Behaviors.same();
+    }
+
+    private Behavior<FridgeCommand> onOrderFailed(OrderFailed msg) {
+        replaceOrderInHistory(msg.order().failed());
+        getContext().getLog().warn("Fridge '{}': order {} failed — {}",
+                identifier, msg.order().orderId(), msg.reason());
+
+        if (msg.replyTo() != null) {
+            msg.replyTo().tell(new OrderResponse(false, msg.reason(), null));
+        }
+        return Behaviors.same();
+    }
+
+    private void replaceOrderInHistory(Order updated) {
+        for (int i = 0; i < orderHistory.size(); i++) {
+            if (orderHistory.get(i).orderId().equals(updated.orderId())) {
+                orderHistory.set(i, updated);
+                return;
+            }
+        }
+    }
+
+    private void validateOrder(Map<String, Integer> items) throws FridgeException {
+        if (items == null || items.isEmpty()) {
+            throw new InvalidOrderException("Order must contain at least one item");
+        }
+
+        int totalNewItems = 0;
+        double totalNewWeight = 0.0;
+
+        for (Map.Entry<String, Integer> entry : items.entrySet()) {
+            String productId = entry.getKey();
+            Integer quantity = entry.getValue();
+
+            if (quantity == null || quantity <= 0) {
+                throw new InvalidOrderException("Quantity must be positive for product " + productId);
+            }
+            Product product = inventory.get(productId);
+            if (product == null) {
+                throw new ProductNotAvailableException(productId, quantity, 0);
+            }
+            totalNewItems += quantity;
+            totalNewWeight += product.weight() * quantity;
+        }
+
         if (currentItemCount + totalNewItems > maxItems) {
             throw new InsufficientSpaceException(currentItemCount, maxItems, totalNewItems);
         }
-
-        double totalNewWeight = 0.0;
-        for (Map.Entry<String, Integer> entry : items.entrySet()) {
-            Product p = inventory.get(entry.getKey());
-            totalNewWeight += (p.getWeight() * entry.getValue());
-        }
-
         if (currentWeightKg + totalNewWeight > maxWeightKg) {
             throw new InsufficientWeightCapacityException(currentWeightKg, maxWeightKg, totalNewWeight);
         }
     }
 
-    private void autoOrderProduct(String productId, int quantity) {
-        Map<String, Integer> items = new HashMap<>();
-        items.put(productId, quantity);
+    private double computeTotalPrice(Map<String, Integer> items) {
+        double total = 0.0;
+        for (Map.Entry<String, Integer> entry : items.entrySet()) {
+            total += inventory.get(entry.getKey()).price() * entry.getValue();
+        }
+        return total;
+    }
 
-        getContext().getLog().info("Fridge '{}': Auto-ordering {} x product {}",
-                identifier, quantity, productId);
-
+    private void triggerAutoOrder(String productId) {
+        Map<String, Integer> items = Map.of(productId, AUTO_REORDER_QUANTITY);
+        getContext().getLog().info("Fridge '{}': auto-ordering {} x {} (out of stock)", identifier, AUTO_REORDER_QUANTITY, productId);
         getContext().getSelf().tell(new OrderProducts(items, null));
     }
 
-    public void completeOrder(Order order, Receipt receipt) {
-        order.setStatus(Order.OrderStatus.COMPLETED);
-
-        for (Map.Entry<String, Integer> entry : order.getItems().entrySet()) {
-            Product p = inventory.get(entry.getKey());
-            if (p != null) {
-                p.addQuantity(entry.getValue());
-                currentItemCount += entry.getValue();
-                currentWeightKg += (p.getWeight() * entry.getValue());
-            }
-        }
-
-        getContext().getLog().info("Fridge '{}': Order {} completed - {}",
-                identifier, order.getOrderId(), receipt);
-    }
-
-    private Fridge onPostStop() {
-        getContext().getLog().info("Fridge Actor '{}' stopped", identifier);
+    private Behavior<FridgeCommand> onPostStop() {
+        getContext().getLog().info("Fridge '{}' stopped", identifier);
         return this;
     }
 }

@@ -4,5 +4,4 @@ import java.util.Map;
 
 public record OrderRequest(
         Map<String, Integer> items
-) {
-}
+) {}

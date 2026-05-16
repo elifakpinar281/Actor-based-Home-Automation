@@ -1,9 +1,9 @@
 package at.fhv.sysarch.lab2.homeautomation.uihandler.routes;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.MediaStation;
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidRequestException;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.MediaStatusResponse;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.SuccessResponse;
-import at.fhv.sysarch.lab2.homeautomation.uihandler.exception.ErrorResponse;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.actor.typed.javadsl.AskPattern;
@@ -15,7 +15,7 @@ import org.apache.pekko.http.javadsl.server.Route;
 import java.time.Duration;
 
 public class MediaRoutes extends AllDirectives {
-    private static final Duration TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration ASK_TIMEOUT = Duration.ofSeconds(5);
 
     private final ActorRef<MediaStation.MediaStationCommand> mediaStationActor;
     private final ActorSystem<?> system;
@@ -35,32 +35,29 @@ public class MediaRoutes extends AllDirectives {
 
     private Route playMovie() {
         return parameter("movieName", movieName -> {
-            if (movieName.isEmpty()) {
-                return complete(StatusCodes.BAD_REQUEST, new ErrorResponse("Movie name is required"), Jackson.marshaller());
+            if (movieName == null || movieName.isBlank()) {
+                throw new InvalidRequestException("Movie name is required");
             }
             mediaStationActor.tell(new MediaStation.PlayMovie(movieName));
-            return complete(StatusCodes.ACCEPTED, new SuccessResponse("Movie playback requested"), Jackson.marshaller());
+            return complete(StatusCodes.ACCEPTED,
+                    new SuccessResponse("Movie playback requested"),
+                    Jackson.marshaller());
         });
     }
 
     private Route stopMovie() {
         mediaStationActor.tell(new MediaStation.StopMovie());
-        return complete(StatusCodes.ACCEPTED, new SuccessResponse("Movie stop requested"), Jackson.marshaller());
+        return complete(StatusCodes.ACCEPTED,
+                new SuccessResponse("Movie stop requested"),
+                Jackson.marshaller());
     }
 
     private Route getStatus() {
-        return get(() ->
-                onComplete(
-                        AskPattern.ask(mediaStationActor, MediaStation.GetStatus::new, TIMEOUT, system.scheduler()),
-                        response -> {
-                            if (!response.isSuccess()) {
-                                return complete(StatusCodes.INTERNAL_SERVER_ERROR, new ErrorResponse("media status failed"), Jackson.marshaller());
-                            }
-                            MediaStation.StatusResponse r = response.get();
-                            return complete(StatusCodes.OK, new MediaStatusResponse(r.currentMovie(), r.isPlaying()),
-                                    Jackson.marshaller());
-                        }
-                )
-        );
+        return get(() -> onSuccess(
+                AskPattern.ask(mediaStationActor, MediaStation.GetStatus::new, ASK_TIMEOUT, system.scheduler()),
+                response -> complete(StatusCodes.OK,
+                        new MediaStatusResponse(response.currentMovie(), response.isPlaying()),
+                        Jackson.marshaller())
+        ));
     }
 }

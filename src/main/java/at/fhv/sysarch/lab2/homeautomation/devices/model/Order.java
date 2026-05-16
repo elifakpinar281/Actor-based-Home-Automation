@@ -2,40 +2,52 @@ package at.fhv.sysarch.lab2.homeautomation.devices.model;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
-public class Order implements Serializable {
-    private final String orderId;
-    private final Map<String, Integer> items;  // productId -> quantity
-    private final LocalDateTime timestamp;
-    private OrderStatus status;
-    private double totalPrice;
-    private String receipt;
+public record Order(
+        String orderId,
+        Map<String, Integer> items,
+        LocalDateTime timestamp,
+        OrderStatus status,
+        double totalPrice,
+        String receiptId
+) implements Serializable {
 
-    public enum OrderStatus {
-        PENDING, PROCESSING, COMPLETED, FAILED
+
+    public Order {
+        Objects.requireNonNull(orderId, "orderId");
+        Objects.requireNonNull(items, "items");
+        Objects.requireNonNull(timestamp, "timestamp");
+        Objects.requireNonNull(status, "status");
+        items = Collections.unmodifiableMap(new HashMap<>(items));
     }
 
-    public Order(Map<String, Integer> items) {
-        this.orderId = UUID.randomUUID().toString();
-        this.items = new HashMap<>(items);
-        this.timestamp = LocalDateTime.now();
-        this.status = OrderStatus.PENDING;
-        this.totalPrice = 0.0;
+    public static Order create(Map<String, Integer> items, double totalPrice) {
+        return new Order(
+                UUID.randomUUID().toString(),
+                items,
+                LocalDateTime.now(),
+                OrderStatus.PENDING,
+                totalPrice,
+                null
+        );
     }
 
-    public String getOrderId() { return orderId; }
-    public Map<String, Integer> getItems() { return new HashMap<>(items); }
-    public LocalDateTime getTimestamp() { return timestamp; }
-    public OrderStatus getStatus() { return status; }
-    public double getTotalPrice() { return totalPrice; }
-    public String getReceipt() { return receipt; }
+    public Order withStatus(OrderStatus newStatus) {
+        return new Order(orderId, items, timestamp, newStatus, totalPrice, receiptId);
+    }
 
-    public void setStatus(OrderStatus status) { this.status = status; }
-    public void setTotalPrice(double price) { this.totalPrice = price; }
-    public void setReceipt(String receipt) { this.receipt = receipt; }
+    public Order withReceipt(String newReceiptId) {
+        return new Order(orderId, items, timestamp, status, totalPrice, newReceiptId);
+    }
+
+    public Order completed(String newReceiptId) {
+        return new Order(orderId, items, timestamp, OrderStatus.COMPLETED, totalPrice, newReceiptId);
+    }
+
+    public Order failed() {
+        return new Order(orderId, items, timestamp, OrderStatus.FAILED, totalPrice, receiptId);
+    }
 
     @Override
     public String toString() {
