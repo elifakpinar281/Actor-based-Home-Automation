@@ -15,6 +15,8 @@ public enum ErrorCode {
     FRIDGE003,
     FRIDGE004,
     FRIDGE005,
+    FRIDGE006,
+    FRIDGE007,
 
     MEDIA001,
     AC001,

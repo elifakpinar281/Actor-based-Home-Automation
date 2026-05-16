@@ -27,6 +27,8 @@ public final class GlobalExceptionHandler extends AllDirectives {
                 .match(InvalidTemperatureException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
                 .match(InvalidWeatherConditionException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
                 .match(MqttMessageParseException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
+                .match(InvalidOrderLineItemException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
+                .match(InvalidProductException.class, ex -> respond(StatusCodes.BAD_REQUEST, ex))
 
                 .match(ProductNotAvailableException.class, ex -> respond(StatusCodes.NOT_FOUND, ex))
 

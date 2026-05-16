@@ -1,4 +1,6 @@
-package at.fhv.sysarch.lab2.homeautomation.devices.model;
+package at.fhv.sysarch.lab2.homeautomation.shared.model.order;
+
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidProductException;
 
 import java.util.Objects;
 
@@ -15,13 +17,12 @@ public record Product(
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(name, "name");
         if (quantity < 0) {
-            throw new IllegalArgumentException("quantity must not be negative");
+            throw new InvalidProductException("quantity must not be negative");
         }
         if (initialQuantity < 0) {
-            throw new IllegalArgumentException("initialQuantity must not be negative");
+            throw new InvalidProductException("initialQuantity must not be negative");
         }
     }
-
 
     public Product(String id, String name, double weight, double price, int quantity) {
         this(id, name, weight, price, quantity, quantity);
@@ -46,7 +47,9 @@ public record Product(
     @Override
     public boolean equals(Object other) {
         if (this == other) return true;
-        if (!(other instanceof Product otherProduct)) return false;
+        if (!(other instanceof Product otherProduct)) {
+            return false;
+        }
         return Objects.equals(id, otherProduct.id);
     }
 

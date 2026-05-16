@@ -1,17 +1,14 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
-import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
-import at.fhv.sysarch.lab2.homeautomation.devices.model.OrderLineItem;
-import at.fhv.sysarch.lab2.homeautomation.devices.model.Product;
-import at.fhv.sysarch.lab2.homeautomation.devices.model.Receipt;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.order.Order;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.order.OrderLineItem;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.order.Receipt;
 import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.*;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
 import org.apache.pekko.grpc.GrpcClientSettings;
-
-import java.util.Map;
 
 public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcessorCommand> {
     public interface OrderProcessorCommand {}

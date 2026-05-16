@@ -1,4 +1,4 @@
-package at.fhv.sysarch.lab2.homeautomation.devices.model;
+package at.fhv.sysarch.lab2.homeautomation.shared.model.order;
 
 import java.time.LocalDateTime;
 import java.util.List;

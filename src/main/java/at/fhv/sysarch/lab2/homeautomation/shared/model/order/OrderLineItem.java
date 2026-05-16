@@ -1,5 +1,6 @@
-package at.fhv.sysarch.lab2.homeautomation.devices.model;
+package at.fhv.sysarch.lab2.homeautomation.shared.model.order;
 
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidOrderLineItemException;
 
 import java.util.Objects;
 
@@ -14,22 +15,21 @@ public record OrderLineItem(
         Objects.requireNonNull(productId, "productId");
         Objects.requireNonNull(productName, "productName");
         if (quantity <= 0) {
-            throw new IllegalArgumentException("quantity must be positive");
+            throw new InvalidOrderLineItemException("quantity must be positive");
         }
         if (unitPrice < 0) {
-            throw new IllegalArgumentException("unitPrice must not be negative");
+            throw new InvalidOrderLineItemException("unitPrice must not be negative");
         }
         if (weightPerUnit < 0) {
-            throw new IllegalArgumentException("weightPerUnit must not be negative");
+            throw new InvalidOrderLineItemException("weightPerUnit must not be negative");
         }
     }
 
     public double totalPrice() {
-        return unitPrice * quantity;
+        return Math.round(unitPrice * quantity * 100.0) / 100.0;
     }
 
     public double totalWeight() {
         return weightPerUnit * quantity;
     }
-
 }
