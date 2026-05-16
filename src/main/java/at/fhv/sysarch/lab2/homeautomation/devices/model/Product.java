@@ -1,6 +1,5 @@
 package at.fhv.sysarch.lab2.homeautomation.devices.model;
 
-import java.io.Serializable;
 import java.util.Objects;
 
 public record Product(
@@ -8,8 +7,9 @@ public record Product(
         String name,
         double weight,
         double price,
-        int quantity
-) implements Serializable {
+        int quantity,
+        int initialQuantity
+) {
 
     public Product {
         Objects.requireNonNull(id, "id");
@@ -17,10 +17,18 @@ public record Product(
         if (quantity < 0) {
             throw new IllegalArgumentException("quantity must not be negative");
         }
+        if (initialQuantity < 0) {
+            throw new IllegalArgumentException("initialQuantity must not be negative");
+        }
+    }
+
+
+    public Product(String id, String name, double weight, double price, int quantity) {
+        this(id, name, weight, price, quantity, quantity);
     }
 
     public Product withQuantity(int newQuantity) {
-        return new Product(id, name, weight, price, Math.max(0, newQuantity));
+        return new Product(id, name, weight, price, Math.max(0, newQuantity), initialQuantity);
     }
 
     public Product addQuantity(int amount) {

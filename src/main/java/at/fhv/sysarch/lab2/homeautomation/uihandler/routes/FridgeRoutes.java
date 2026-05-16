@@ -15,7 +15,6 @@ import org.apache.pekko.http.javadsl.server.Route;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -68,33 +67,21 @@ public class FridgeRoutes extends AllDirectives {
 
     private Route getOrderHistory() {
         return get(() -> onSuccess(
-                AskPattern.ask(fridgeActor, Fridge.GetProducts::new, ASK_TIMEOUT, system.scheduler()),
-                productsResponse -> {
-                    Map<String, Product> byId = new HashMap<>();
-                    for (Product product : productsResponse.products()) {
-                        byId.put(product.id(), product);
+                AskPattern.ask(fridgeActor, Fridge.GetOrderHistory::new, ASK_TIMEOUT, system.scheduler()),
+                historyResponse -> {
+                    List<OrderDto> dtos = new ArrayList<>();
+                    for (Order order : historyResponse.orders()) {
+                        dtos.add(toOrderDto(order));
                     }
-                    return onSuccess(
-                            AskPattern.ask(fridgeActor, Fridge.GetOrderHistory::new, ASK_TIMEOUT, system.scheduler()),
-                            historyResponse -> {
-                                List<OrderDto> dtos = new ArrayList<>();
-                                for (Order order : historyResponse.orders()) {
-                                    dtos.add(toOrderDto(order, byId));
-                                }
-                                return complete(StatusCodes.OK, new OrderHistoryDto(dtos), Jackson.marshaller());
-                            }
-                    );
+                    return complete(StatusCodes.OK, new OrderHistoryDto(dtos), Jackson.marshaller());
                 }
         ));
     }
 
-    private OrderDto toOrderDto(Order order, Map<String, Product> productsById) {
+    private OrderDto toOrderDto(Order order) {
         List<OrderItemDto> itemDtos = new ArrayList<>();
         for (Map.Entry<String, Integer> entry : order.items().entrySet()) {
-            Product product = productsById.get(entry.getKey());
-            String name = product != null ? product.name() : entry.getKey();
-            double unitPrice = product != null ? product.price() : 0.0;
-            itemDtos.add(new OrderItemDto(entry.getKey(), name, entry.getValue(), unitPrice));
+            itemDtos.add(new OrderItemDto(entry.getKey(), entry.getKey(), entry.getValue(), 0.0));
         }
         return new OrderDto(
                 order.orderId(),
@@ -131,10 +118,21 @@ public class FridgeRoutes extends AllDirectives {
                             throw new InvalidOrderException("Quantity must be positive for product " + entry.getKey());
                         }
                     }
-                    fridgeActor.tell(new Fridge.OrderProducts(request.items(), null));
-                    return complete(StatusCodes.ACCEPTED,
-                            new SuccessResponse("Order request sent"),
-                            Jackson.marshaller());
+                    return onSuccess(
+                            AskPattern.<Fridge.FridgeCommand, Fridge.OrderResponse>ask(
+                                    fridgeActor,
+                                    replyTo -> new Fridge.OrderProducts(request.items(), replyTo),
+                                    ASK_TIMEOUT,
+                                    system.scheduler()
+                            ),
+                            orderResponse -> {
+                                if (orderResponse.success()) {
+                                    return complete(StatusCodes.OK, orderResponse, Jackson.marshaller());
+                                } else {
+                                    return complete(StatusCodes.UNPROCESSABLE_ENTITY, orderResponse, Jackson.marshaller());
+                                }
+                            }
+                    );
                 })
         );
     }

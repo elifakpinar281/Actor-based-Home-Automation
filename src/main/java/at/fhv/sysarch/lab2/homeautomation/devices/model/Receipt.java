@@ -10,7 +10,7 @@ public record Receipt(
         LocalDateTime timestamp,
         Map<String, Integer> items,
         double totalPrice
-) implements Serializable {
+) {
 
     public Receipt {
         Objects.requireNonNull(receiptId, "receiptId");

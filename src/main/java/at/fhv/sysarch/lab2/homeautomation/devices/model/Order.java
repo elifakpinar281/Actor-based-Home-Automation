@@ -11,7 +11,7 @@ public record Order(
         OrderStatus status,
         double totalPrice,
         String receiptId
-) implements Serializable {
+) {
 
 
     public Order {

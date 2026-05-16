@@ -1,6 +1,7 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Order;
+import at.fhv.sysarch.lab2.homeautomation.devices.model.FridgeInventory;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.OrderStatus;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Product;
 import at.fhv.sysarch.lab2.homeautomation.devices.model.Receipt;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.*;
 
 public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
@@ -38,10 +40,8 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
     public static final ServiceKey<FridgeCommand> SERVICE_KEY = ServiceKey.create(FridgeCommand.class, "fridge");
 
-    private static final int AUTO_REORDER_QUANTITY = 5;
-
     public static Behavior<FridgeCommand> create(String identifier, int maxItems, double maxWeightKg) {
-        return Behaviors.setup(context -> new Fridge(context, identifier, maxItems, maxWeightKg, defaultInventory()));
+        return Behaviors.setup(context -> new Fridge(context, identifier, maxItems, maxWeightKg, FridgeInventory.defaultProducts()));
     }
 
     public static Behavior<FridgeCommand> create(String identifier, int maxItems, double maxWeightKg, List<Product> initialInventory) {
@@ -66,20 +66,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             addToInventory(product);
         }
         getContext().getLog().info("Fridge '{}' started — max: {} items, {} kg, initial: {} items / {} kg", identifier, maxItems, maxWeightKg, currentItemCount, currentWeightKg);
-    }
-
-    private static List<Product> defaultInventory() {
-        return List.of(
-                new Product("P001", "Milk",          1.03, 1.49, 2),
-                new Product("P002", "Apples",        0.18, 0.40, 6),
-                new Product("P003", "Sourdough",     0.55, 3.20, 0),
-                new Product("P004", "Gruyère",       0.30, 5.80, 1),
-                new Product("P005", "Eggs (6er)",    0.42, 2.10, 1),
-                new Product("P006", "Chicken Breast", 0.50, 7.40, 0),
-                new Product("P007", "Salmon Filet",  0.35, 8.90, 8),
-                new Product("P008", "Mineral Water", 1.50, 0.99, 3),
-                new Product("P009", "Carrots",       1.00, 1.80, 0)
-        );
     }
 
     private void addToInventory(Product product) {
@@ -249,9 +235,36 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     }
 
     private void triggerAutoOrder(String productId) {
-        Map<String, Integer> items = Map.of(productId, AUTO_REORDER_QUANTITY);
-        getContext().getLog().info("Fridge '{}': auto-ordering {} x {} (out of stock)", identifier, AUTO_REORDER_QUANTITY, productId);
-        getContext().getSelf().tell(new OrderProducts(items, null));
+        Product product = inventory.get(productId);
+        if (product == null) {
+            getContext().getLog().warn("Fridge '{}': auto-order skipped — product {} no longer in inventory", identifier, productId);
+            return;
+        }
+
+        int target = product.initialQuantity();
+        if (target <= 0) {
+            getContext().getLog().debug("Fridge '{}': auto-order skipped for '{}' — initialQuantity is 0, no reorder configured", identifier, product.name());
+            return;
+        }
+
+        int remainingSlots = maxItems - currentItemCount;
+        double remainingWeightKg = maxWeightKg - currentWeightKg;
+        double neededWeightKg = product.weight() * target;
+
+        if (target > remainingSlots) {
+            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' — needs {} slots but only {} available",
+                    identifier, product.name(), target, remainingSlots);
+            return;
+        }
+
+        if (neededWeightKg > remainingWeightKg) {
+            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' — needs {} kg but only {} kg remaining", identifier, product.name(),
+                    String.format("%.2f", neededWeightKg), String.format("%.2f", remainingWeightKg));
+            return;
+        }
+
+        getContext().getLog().info("Fridge '{}': auto-ordering {} x '{}' (restoring to initial stock)", identifier, target, product.name());
+        getContext().getSelf().tell(new OrderProducts(Map.of(productId, target), null));
     }
 
     private Behavior<FridgeCommand> onPostStop() {
