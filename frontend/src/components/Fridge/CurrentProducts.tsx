@@ -15,6 +15,7 @@ export function CurrentProducts() {
     const { push } = useToast();
 
     const [optimistic, setOptimistic] = useState<Record<string, number>>({});
+    const [pendingReorders, setPendingReorders] = useState<Set<string>>(new Set());
 
     function effectiveQty(p: Product): number {
         const override = optimistic[p.id];
@@ -24,17 +25,29 @@ export function CurrentProducts() {
         return override;
     }
 
+    function isReordering(p: Product): boolean {
+        return pendingReorders.has(p.id) && p.quantity === 0;
+    }
+
     async function handleConsume(p: Product) {
         const current = effectiveQty(p);
         if (current <= 0) return;
 
         setOptimistic((prev) => ({ ...prev, [p.id]: current - 1 }));
+        const triggersReorder = current - 1 <= 0;
+        if (triggersReorder) {
+            setPendingReorders((prev) => {
+                const next = new Set(prev);
+                next.add(p.id);
+                return next;
+            });
+        }
 
         try {
             await api.consumeProduct(p.id, 1);
             reloadCapacity();
 
-            if (current - 1 <= 0) {
+            if (triggersReorder) {
                 push(`${p.name} consumed — re-ordering…`, "success");
                 await reloadUntilChanged();
             } else {
@@ -47,19 +60,38 @@ export function CurrentProducts() {
                 delete next[p.id];
                 return next;
             });
+            if (triggersReorder) {
+                setPendingReorders((prev) => {
+                    if (!prev.has(p.id)) return prev;
+                    const next = new Set(prev);
+                    next.delete(p.id);
+                    return next;
+                });
+            }
         } catch (e) {
             setOptimistic((prev) => {
                 const next = { ...prev };
                 delete next[p.id];
                 return next;
             });
+            if (triggersReorder) {
+                setPendingReorders((prev) => {
+                    if (!prev.has(p.id)) return prev;
+                    const next = new Set(prev);
+                    next.delete(p.id);
+                    return next;
+                });
+            }
             push(`Consume failed: ${(e as Error).message}`, "error");
         }
     }
 
     const visible = products
-        .map((p) => ({ ...p, quantity: effectiveQty(p) }))
-        .filter((p) => p.quantity > 0);
+        .filter((p) => p.quantity > 0 || isReordering(p))
+        .map((p) => ({
+            product: { ...p, quantity: effectiveQty(p) },
+            reordering: isReordering(p),
+        }));
 
     const usedPct = capacity ? Math.min(100, (capacity.currentWeight / capacity.maxWeight) * 100) : 0;
     const freeKg = capacity ? Math.max(0, capacity.maxWeight - capacity.currentWeight) : 0;
@@ -74,8 +106,13 @@ export function CurrentProducts() {
                     {visible.length === 0 && (
                         <p className="text-sm text-ink-soft">Fridge is empty.</p>
                     )}
-                    {visible.map((p) => (
-                        <ProductRow key={p.id} product={p} onConsume={() => handleConsume(p)} />
+                    {visible.map(({ product, reordering }) => (
+                        <ProductRow
+                            key={product.id}
+                            product={product}
+                            isReordering={reordering}
+                            onConsume={() => handleConsume(product)}
+                        />
                     ))}
                 </div>
             </div>
@@ -111,9 +148,9 @@ export function CurrentProducts() {
     );
 }
 
-function ProductRow({ product, onConsume }: { product: Product; onConsume: () => void }) {
+function ProductRow({ product, isReordering, onConsume }: { product: Product; isReordering: boolean; onConsume: () => void }) {
     return (
-        <div className="neu-card px-4 py-3 flex items-center gap-4">
+        <div className={`neu-card px-4 py-3 flex items-center gap-4 ${isReordering ? "opacity-70" : ""}`}>
             <div className="w-9 h-9 neu-inset flex items-center justify-center shrink-0">
                 <ProductIcon name={product.name} />
             </div>
@@ -126,12 +163,22 @@ function ProductRow({ product, onConsume }: { product: Product; onConsume: () =>
             <span className="text-sm text-ink ml-2">×{product.quantity}</span>
             <span className="text-sm text-ink-soft ml-auto">{(product.weight * product.quantity).toFixed(2)} kg</span>
             <span className="text-sm font-semibold text-ink w-16 text-right">€{(product.price * product.quantity).toFixed(2)}</span>
-            <button
-                onClick={onConsume}
-                className="pill border border-danger text-danger ml-2 hover:bg-danger hover:text-white transition-colors"
-            >
-                Consume
-            </button>
+            {isReordering ? (
+                <span
+                    className="pill border border-ink/20 text-ink-soft ml-2 cursor-default select-none flex items-center gap-2"
+                    aria-live="polite"
+                >
+                    <span className="inline-block w-2 h-2 rounded-full bg-accent animate-pulse" />
+                    Reordering…
+                </span>
+            ) : (
+                <button
+                    onClick={onConsume}
+                    className="pill border border-danger text-danger ml-2 hover:bg-danger hover:text-white transition-colors"
+                >
+                    Consume
+                </button>
+            )}
         </div>
     );
 }

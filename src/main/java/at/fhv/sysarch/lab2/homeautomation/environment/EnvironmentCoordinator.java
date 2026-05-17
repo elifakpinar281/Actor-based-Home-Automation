@@ -53,23 +53,22 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
 
     private EnvironmentCoordinator(ActorContext<Command> context) {
         super(context);
-
-        // MessageAdapter registriert pro Klasse und nicht pro Key. Vor dem Auspacken wird überprüft, ob die Listing für unseren Key bestimmt ist.
-        ActorRef<Receptionist.Listing> temperatureAdapter = context.messageAdapter(
+        // Pekko erlaubt nur einen messageAdapter pro Message-Klasse. Wir verwenden deshalb einen Adapter für Receptionist.
+        ActorRef<Receptionist.Listing> listingAdapter = context.messageAdapter(
                 Receptionist.Listing.class,
-                listing -> listing.isForKey(TemperatureSensor.SERVICE_KEY)
-                        ? new TemperatureSensorsUpdated(listing.getServiceInstances(TemperatureSensor.SERVICE_KEY))
-                        : new IgnoredListing()
-        );
-        ActorRef<Receptionist.Listing> weatherAdapter = context.messageAdapter(
-                Receptionist.Listing.class,
-                listing -> listing.isForKey(WeatherSensor.SERVICE_KEY)
-                        ? new WeatherSensorsUpdated(listing.getServiceInstances(WeatherSensor.SERVICE_KEY))
-                        : new IgnoredListing()
+                listing -> {
+                    if (listing.isForKey(TemperatureSensor.SERVICE_KEY)) {
+                        return new TemperatureSensorsUpdated(listing.getServiceInstances(TemperatureSensor.SERVICE_KEY));
+                    }
+                    if (listing.isForKey(WeatherSensor.SERVICE_KEY)) {
+                        return new WeatherSensorsUpdated(listing.getServiceInstances(WeatherSensor.SERVICE_KEY));
+                    }
+                    return new IgnoredListing();
+                }
         );
 
-        context.getSystem().receptionist().tell(Receptionist.subscribe(TemperatureSensor.SERVICE_KEY, temperatureAdapter));
-        context.getSystem().receptionist().tell(Receptionist.subscribe(WeatherSensor.SERVICE_KEY, weatherAdapter));
+        context.getSystem().receptionist().tell(Receptionist.subscribe(TemperatureSensor.SERVICE_KEY, listingAdapter));
+        context.getSystem().receptionist().tell(Receptionist.subscribe(WeatherSensor.SERVICE_KEY, listingAdapter));
 
         getContext().getLog().info("EnvironmentCoordinator started in mode {} - discovering sensors via Receptionist", mode);
     }
