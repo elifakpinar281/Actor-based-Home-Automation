@@ -152,7 +152,7 @@ public class FridgeRoutes extends AllDirectives {
                     return onSuccess(
                             AskPattern.<Fridge.FridgeCommand, Fridge.OrderResponse>ask(
                                     fridgeActor,
-                                    replyTo -> new Fridge.OrderProducts(request.items(), replyTo),
+                                    replyTo -> Fridge.OrderProducts.fromUser(request.items(), replyTo),
                                     ORDER_ASK_TIMEOUT,
                                     system.scheduler()
                             ),

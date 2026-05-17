@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     public interface FridgeCommand {}
@@ -24,9 +25,17 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     public record GetOrderHistory(ActorRef<OrderHistoryResponse> replyTo) implements FridgeCommand {}
     public record GetCapacity(ActorRef<CapacityResponse> replyTo) implements FridgeCommand {}
     public record ConsumeProduct(String productId, int quantity) implements FridgeCommand {}
-    public record OrderProducts(Map<String, Integer> items, ActorRef<OrderResponse> replyTo) implements FridgeCommand {}
-    public record OrderCompleted(Order order, Receipt receipt, ActorRef<OrderResponse> replyTo) implements FridgeCommand {}
-    public record OrderFailed(Order order, String reason, ActorRef<OrderResponse> replyTo) implements FridgeCommand {}
+    public record OrderProducts(Map<String, Integer> items, Optional<ActorRef<OrderResponse>> replyTo) implements FridgeCommand {
+        public static OrderProducts fromUser(Map<String, Integer> items, ActorRef<OrderResponse> replyTo) {
+            return new OrderProducts(items, Optional.of(replyTo));
+        }
+        public static OrderProducts autoOrder(Map<String, Integer> items) {
+            return new OrderProducts(items, Optional.empty());
+        }
+    }
+
+    public record OrderCompleted(Order order, Receipt receipt, Optional<ActorRef<OrderResponse>> replyTo) implements FridgeCommand {}
+    public record OrderFailed(Order order, String reason, Optional<ActorRef<OrderResponse>> replyTo) implements FridgeCommand {}
 
     public record ProductsResponse(List<Product> products) {}
     public record OrderHistoryResponse(List<Order> orders) {}
@@ -60,8 +69,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         for (Product product : initialInventory) {
             inventory.put(product.id(), product);
         }
-        getContext().getLog().info("Fridge '{}' started - max: {} items, {} kg, initial: {} items / {} kg",
-                identifier, maxItems, maxWeightKg, currentItemCount(), currentWeightKg());
+        getContext().getLog().info("Fridge '{}' started - max: {} items, {} kg, initial: {} items / {} kg", identifier, maxItems, maxWeightKg, currentItemCount(), currentWeightKg());
     }
 
     private int currentItemCount() {
@@ -137,9 +145,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             lineItems = validateAndBuildLineItems(msg.items());
         } catch (FridgeException ex) {
             getContext().getLog().warn("Fridge '{}': order validation failed: {}", identifier, ex.getMessage());
-            if (msg.replyTo() != null) {
-                msg.replyTo().tell(new OrderResponse(false, ex.getMessage(), null));
-            }
+            msg.replyTo().ifPresent(replyTo -> replyTo.tell(new OrderResponse(false, ex.getMessage(), null)));
             return Behaviors.same();
         }
 
@@ -168,18 +174,14 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
         getContext().getLog().info("Fridge '{}': order {} completed - {}", identifier, msg.order().orderId(), msg.receipt());
 
-        if (msg.replyTo() != null) {
-            msg.replyTo().tell(new OrderResponse(true, "Order processed successfully", msg.receipt()));
-        }
+        msg.replyTo().ifPresent(replyTo -> replyTo.tell(new OrderResponse(true, "Order processed successfully", msg.receipt())));
         return Behaviors.same();
     }
 
     private Behavior<FridgeCommand> onOrderFailed(OrderFailed msg) {
         replaceOrderInHistory(msg.order().failed());
         getContext().getLog().warn("Fridge '{}': order {} failed - {}", identifier, msg.order().orderId(), msg.reason());
-        if (msg.replyTo() != null) {
-            msg.replyTo().tell(new OrderResponse(false, msg.reason(), null));
-        }
+        msg.replyTo().ifPresent(replyTo -> replyTo.tell(new OrderResponse(false, msg.reason(), null)));
         return Behaviors.same();
     }
 
@@ -253,7 +255,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         }
 
         getContext().getLog().info("Fridge '{}': auto-ordering {} x '{}' (restoring to initial stock)", identifier, target, product.name());
-        getContext().getSelf().tell(new OrderProducts(Map.of(productId, target), null));
+        getContext().getSelf().tell(OrderProducts.autoOrder(Map.of(productId, target)));
     }
 
     private Behavior<FridgeCommand> onPostStop() {

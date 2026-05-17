@@ -8,13 +8,15 @@ import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
 
+import java.util.Optional;
+
 public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcessorCommand> {
     public interface OrderProcessorCommand {}
 
-    public record ProcessOrder(Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
+    public record ProcessOrder(Order order, Optional<ActorRef<Fridge.OrderResponse>> replyTo) implements OrderProcessorCommand {}
 
-    private record GrpcResponse(OrderResponse response, Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
-    private record GrpcFailure(Throwable error, Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
+    private record GrpcResponse(OrderResponse response, Order order, Optional<ActorRef<Fridge.OrderResponse>> replyTo) implements OrderProcessorCommand {}
+    private record GrpcFailure(Throwable error, Order order, Optional<ActorRef<Fridge.OrderResponse>> replyTo) implements OrderProcessorCommand {}
 
     private final OrderServiceClient grpcClient;
     private final ActorRef<Fridge.FridgeCommand> fridge;

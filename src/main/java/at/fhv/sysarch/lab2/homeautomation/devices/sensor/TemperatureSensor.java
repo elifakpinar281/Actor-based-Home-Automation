@@ -18,6 +18,7 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
     public record SetEnabled(boolean enabled) implements TemperatureSensorCommand {}
 
     private record AirConditionsUpdated(Set<ActorRef<AirCondition.AirConditionCommand>> airConditions) implements TemperatureSensorCommand {}
+    private record IgnoredListing() implements TemperatureSensorCommand {}
 
     public static final ServiceKey<TemperatureSensorCommand> SERVICE_KEY =
             ServiceKey.create(TemperatureSensorCommand.class, "temperatureSensor");
@@ -34,7 +35,9 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
 
         ActorRef<Receptionist.Listing> adapter = context.messageAdapter(
                 Receptionist.Listing.class,
-                listing -> new AirConditionsUpdated(listing.getServiceInstances(AirCondition.SERVICE_KEY))
+                listing -> listing.isForKey(AirCondition.SERVICE_KEY)
+                        ? new AirConditionsUpdated(listing.getServiceInstances(AirCondition.SERVICE_KEY))
+                        : new IgnoredListing()
         );
         context.getSystem().receptionist().tell(Receptionist.subscribe(AirCondition.SERVICE_KEY, adapter));
 
@@ -47,6 +50,7 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
                 .onMessage(TemperatureMeasured.class, this::onTemperatureMeasured)
                 .onMessage(SetEnabled.class, this::onSetEnabled)
                 .onMessage(AirConditionsUpdated.class, this::onAirConditionsUpdated)
+                .onMessage(IgnoredListing.class, msg -> Behaviors.same())
                 .build();
     }
 

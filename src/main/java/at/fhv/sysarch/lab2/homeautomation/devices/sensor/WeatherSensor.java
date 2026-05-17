@@ -18,6 +18,7 @@ public class WeatherSensor extends AbstractBehavior<WeatherSensor.WeatherSensorC
     public record SetEnabled(boolean enabled) implements WeatherSensorCommand {}
 
     private record BlindsUpdated(Set<ActorRef<Blinds.BlindsCommand>> blinds) implements WeatherSensorCommand {}
+    private record IgnoredListing() implements WeatherSensorCommand {}
 
     public static final ServiceKey<WeatherSensorCommand> SERVICE_KEY =
             ServiceKey.create(WeatherSensorCommand.class, "weatherSensor");
@@ -34,7 +35,9 @@ public class WeatherSensor extends AbstractBehavior<WeatherSensor.WeatherSensorC
 
         ActorRef<Receptionist.Listing> adapter = context.messageAdapter(
                 Receptionist.Listing.class,
-                listing -> new BlindsUpdated(listing.getServiceInstances(Blinds.SERVICE_KEY))
+                listing -> listing.isForKey(Blinds.SERVICE_KEY)
+                        ? new BlindsUpdated(listing.getServiceInstances(Blinds.SERVICE_KEY))
+                        : new IgnoredListing()
         );
         context.getSystem().receptionist().tell(Receptionist.subscribe(Blinds.SERVICE_KEY, adapter));
 
@@ -47,6 +50,7 @@ public class WeatherSensor extends AbstractBehavior<WeatherSensor.WeatherSensorC
                 .onMessage(WeatherMeasured.class, this::onWeatherMeasured)
                 .onMessage(SetEnabled.class, this::onSetEnabled)
                 .onMessage(BlindsUpdated.class, this::onBlindsUpdated)
+                .onMessage(IgnoredListing.class, msg -> Behaviors.same())
                 .build();
     }
 

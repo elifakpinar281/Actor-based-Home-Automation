@@ -32,6 +32,7 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
 
     private record TemperatureSensorsUpdated(Set<ActorRef<TemperatureSensor.TemperatureSensorCommand>> sensors) implements Command {}
     private record WeatherSensorsUpdated(Set<ActorRef<WeatherSensor.WeatherSensorCommand>> sensors) implements Command {}
+    private record IgnoredListing() implements Command {}
 
     public static final ServiceKey<Command> SERVICE_KEY =
             ServiceKey.create(Command.class, "environmentCoordinator");
@@ -53,13 +54,18 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
     private EnvironmentCoordinator(ActorContext<Command> context) {
         super(context);
 
+        // MessageAdapter registriert pro Klasse und nicht pro Key. Vor dem Auspacken wird überprüft, ob die Listing für unseren Key bestimmt ist.
         ActorRef<Receptionist.Listing> temperatureAdapter = context.messageAdapter(
                 Receptionist.Listing.class,
-                listing -> new TemperatureSensorsUpdated(listing.getServiceInstances(TemperatureSensor.SERVICE_KEY))
+                listing -> listing.isForKey(TemperatureSensor.SERVICE_KEY)
+                        ? new TemperatureSensorsUpdated(listing.getServiceInstances(TemperatureSensor.SERVICE_KEY))
+                        : new IgnoredListing()
         );
         ActorRef<Receptionist.Listing> weatherAdapter = context.messageAdapter(
                 Receptionist.Listing.class,
-                listing -> new WeatherSensorsUpdated(listing.getServiceInstances(WeatherSensor.SERVICE_KEY))
+                listing -> listing.isForKey(WeatherSensor.SERVICE_KEY)
+                        ? new WeatherSensorsUpdated(listing.getServiceInstances(WeatherSensor.SERVICE_KEY))
+                        : new IgnoredListing()
         );
 
         context.getSystem().receptionist().tell(Receptionist.subscribe(TemperatureSensor.SERVICE_KEY, temperatureAdapter));
@@ -81,6 +87,7 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
                 .onMessage(GetCurrentState.class, this::onGetCurrentState)
                 .onMessage(TemperatureSensorsUpdated.class, this::onTemperatureSensorsUpdated)
                 .onMessage(WeatherSensorsUpdated.class, this::onWeatherSensorsUpdated)
+                .onMessage(IgnoredListing.class, msg -> Behaviors.same())
                 .build();
     }
 
