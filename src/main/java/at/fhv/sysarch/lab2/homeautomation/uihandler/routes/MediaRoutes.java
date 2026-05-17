@@ -38,10 +38,22 @@ public class MediaRoutes extends AllDirectives {
             if (movieName == null || movieName.isBlank()) {
                 throw new InvalidRequestException("Movie name is required");
             }
-            mediaStationActor.tell(new MediaStation.PlayMovie(movieName));
-            return complete(StatusCodes.ACCEPTED,
-                    new SuccessResponse("Movie playback requested"),
-                    Jackson.marshaller());
+            return onSuccess(
+                    AskPattern.<MediaStation.MediaStationCommand, MediaStation.PlayMovieResult>ask(
+                            mediaStationActor,
+                            replyTo -> new MediaStation.PlayMovie(movieName, replyTo),
+                            ASK_TIMEOUT,
+                            system.scheduler()
+                    ),
+                    result -> {
+                        if (result.accepted()) {
+                            return complete(StatusCodes.OK, new SuccessResponse(result.message()),
+                                    Jackson.marshaller());
+                        }
+                        return complete(StatusCodes.CONFLICT, new SuccessResponse(result.message()),
+                                Jackson.marshaller());
+                    }
+            );
         });
     }
 

@@ -12,10 +12,11 @@ import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 public class MediaStation extends AbstractBehavior<MediaStation.MediaStationCommand> {
     public interface MediaStationCommand {}
 
-    public record PlayMovie(String movieName) implements MediaStationCommand {}
+    public record PlayMovie(String movieName, ActorRef<PlayMovieResult> replyTo) implements MediaStationCommand {}
     public record StopMovie() implements MediaStationCommand {}
     public record GetStatus(ActorRef<StatusResponse> replyTo) implements MediaStationCommand {}
 
+    public record PlayMovieResult(boolean accepted, String message, String currentMovie) {}
     public record StatusResponse(boolean isPlaying, String currentMovie) {}
 
     public static final ServiceKey<MediaStationCommand> SERVICE_KEY =
@@ -51,6 +52,11 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
     private Behavior<MediaStationCommand> onPlayMovie(PlayMovie msg) {
         if (isPlaying) {
             getContext().getLog().warn("Media Station '{}': cannot play '{}' — '{}' already playing", identifier, msg.movieName(), currentMovie);
+            msg.replyTo().tell(new PlayMovieResult(
+                    false,
+                    "Another movie is already playing: '" + currentMovie + "'",
+                    currentMovie
+            ));
             return Behaviors.same();
         }
 
@@ -58,6 +64,7 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
         currentMovie = msg.movieName();
         blinds.tell(new Blinds.MovieStatusChanged(true));
         getContext().getLog().info("Media Station '{}': NOW PLAYING '{}'", identifier, currentMovie);
+        msg.replyTo().tell(new PlayMovieResult(true, "Movie started", currentMovie));
         return Behaviors.same();
     }
 

@@ -1,5 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
+import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.OrderServiceClient;
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.*;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.order.*;
 import org.apache.pekko.actor.typed.ActorRef;
@@ -34,39 +35,49 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
     public static final ServiceKey<FridgeCommand> SERVICE_KEY = ServiceKey.create(FridgeCommand.class, "fridge");
 
-    public static Behavior<FridgeCommand> create(String identifier, int maxItems, double maxWeightKg) {
-        return Behaviors.setup(context -> new Fridge(context, identifier, maxItems, maxWeightKg, FridgeInventory.defaultProducts()));
+    public static Behavior<FridgeCommand> create(String identifier, int maxItems, double maxWeightKg, OrderServiceClient grpcClient) {
+        return Behaviors.setup(context -> new Fridge(context, identifier, maxItems, maxWeightKg, FridgeInventory.defaultProducts(), grpcClient));
     }
 
-    public static Behavior<FridgeCommand> create(String identifier, int maxItems, double maxWeightKg, List<Product> initialInventory) {
-        return Behaviors.setup(context -> new Fridge(context, identifier, maxItems, maxWeightKg, initialInventory));
+    public static Behavior<FridgeCommand> create(String identifier, int maxItems, double maxWeightKg, OrderServiceClient grpcClient, List<Product> initialInventory) {
+        return Behaviors.setup(context -> new Fridge(context, identifier, maxItems, maxWeightKg, initialInventory, grpcClient));
     }
 
     private final String identifier;
     private final int maxItems;
     private final double maxWeightKg;
+    private final OrderServiceClient grpcClient;
 
     private final Map<String, Product> inventory = new HashMap<>();
     private final List<Order> orderHistory = new ArrayList<>();
-    private int currentItemCount = 0;
-    private double currentWeightKg = 0.0;
 
-    private Fridge(ActorContext<FridgeCommand> context, String identifier, int maxItems, double maxWeightKg, List<Product> initialInventory) {
+    private Fridge(ActorContext<FridgeCommand> context, String identifier, int maxItems, double maxWeightKg, List<Product> initialInventory, OrderServiceClient grpcClient) {
         super(context);
         this.identifier = identifier;
         this.maxItems = maxItems;
         this.maxWeightKg = maxWeightKg;
+        this.grpcClient = grpcClient;
         for (Product product : initialInventory) {
-            addToInventory(product);
+            inventory.put(product.id(), product);
         }
         getContext().getLog().info("Fridge '{}' started — max: {} items, {} kg, initial: {} items / {} kg",
-                identifier, maxItems, maxWeightKg, currentItemCount, currentWeightKg);
+                identifier, maxItems, maxWeightKg, currentItemCount(), currentWeightKg());
     }
 
-    private void addToInventory(Product product) {
-        inventory.put(product.id(), product);
-        currentItemCount += product.quantity();
-        currentWeightKg += product.totalWeight();
+    private int currentItemCount() {
+        int total = 0;
+        for (Product product : inventory.values()) {
+            total += product.quantity();
+        }
+        return total;
+    }
+
+    private double currentWeightKg() {
+        double total = 0.0;
+        for (Product product : inventory.values()) {
+            total += product.totalWeight();
+        }
+        return total;
     }
 
     @Override
@@ -94,7 +105,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     }
 
     private Behavior<FridgeCommand> onGetCapacity(GetCapacity msg) {
-        msg.replyTo().tell(new CapacityResponse(currentItemCount, maxItems, currentWeightKg, maxWeightKg));
+        msg.replyTo().tell(new CapacityResponse(currentItemCount(), maxItems, currentWeightKg(), maxWeightKg));
         return Behaviors.same();
     }
 
@@ -111,8 +122,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
         Product updated = product.removeQuantity(msg.quantity());
         inventory.put(updated.id(), updated);
-        currentItemCount -= msg.quantity();
-        currentWeightKg -= product.weight() * msg.quantity();
 
         getContext().getLog().info("Fridge '{}': consumed {} x {} (remaining: {})", identifier, msg.quantity(), product.name(), updated.quantity());
 
@@ -137,7 +146,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         Order order = Order.create(lineItems).withStatus(OrderStatus.PROCESSING);
         orderHistory.add(order);
 
-        ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor = getContext().spawnAnonymous(OrderProcessor.create(getContext().getSelf()));
+        ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor = getContext().spawnAnonymous(OrderProcessor.create(grpcClient, getContext().getSelf()));
         sessionProcessor.tell(new OrderProcessor.ProcessOrder(order, msg.replyTo()));
 
         getContext().getLog().info("Fridge '{}': dispatched order {} ({} positions, €{}) to external processor",
@@ -155,8 +164,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             }
             Product updated = existing.addQuantity(item.quantity());
             inventory.put(updated.id(), updated);
-            currentItemCount += item.quantity();
-            currentWeightKg += item.totalWeight();
         }
 
         getContext().getLog().info("Fridge '{}': order {} completed — {}", identifier, msg.order().orderId(), msg.receipt());
@@ -211,11 +218,11 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             totalNewWeight += product.weight() * quantity;
         }
 
-        if (currentItemCount + totalNewItems > maxItems) {
-            throw new InsufficientSpaceException(currentItemCount, maxItems, totalNewItems);
+        if (currentItemCount() + totalNewItems > maxItems) {
+            throw new InsufficientSpaceException(currentItemCount(), maxItems, totalNewItems);
         }
-        if (currentWeightKg + totalNewWeight > maxWeightKg) {
-            throw new InsufficientWeightCapacityException(currentWeightKg, maxWeightKg, totalNewWeight);
+        if (currentWeightKg() + totalNewWeight > maxWeightKg) {
+            throw new InsufficientWeightCapacityException(currentWeightKg(), maxWeightKg, totalNewWeight);
         }
         return lineItems;
     }
@@ -228,8 +235,8 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         }
 
         int target = product.initialQuantity();
-        int remainingSlots = maxItems - currentItemCount;
-        double remainingWeightKg = maxWeightKg - currentWeightKg;
+        int remainingSlots = maxItems - currentItemCount();
+        double remainingWeightKg = maxWeightKg - currentWeightKg();
         double neededWeightKg = product.weight() * target;
 
         if (target > remainingSlots) {

@@ -5,35 +5,30 @@ import at.fhv.sysarch.lab2.homeautomation.shared.model.order.OrderLineItem;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.order.Receipt;
 import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.*;
 import org.apache.pekko.actor.typed.ActorRef;
-import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
-import org.apache.pekko.grpc.GrpcClientSettings;
 
 public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcessorCommand> {
     public interface OrderProcessorCommand {}
 
     public record ProcessOrder(Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
 
-    // Adapter für die CompletableFuture des gRPC-Calls
     private record GrpcResponse(OrderResponse response, Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
     private record GrpcFailure(Throwable error, Order order, ActorRef<Fridge.OrderResponse> replyTo) implements OrderProcessorCommand {}
 
     private final OrderServiceClient grpcClient;
     private final ActorRef<Fridge.FridgeCommand> fridge;
 
-    public static Behavior<OrderProcessorCommand> create(ActorRef<Fridge.FridgeCommand> fridge) {
+    public static Behavior<OrderProcessorCommand> create(OrderServiceClient grpcClient, ActorRef<Fridge.FridgeCommand> fridge) {
         return Behaviors.setup(context -> {
-            ActorSystem<?> system = context.getSystem();
-            OrderServiceClient client = OrderServiceClient.create(GrpcClientSettings.fromConfig("orderprocessing.OrderService", system), system);
             context.getLog().debug("OrderProcessor session started");
-            return new OrderProcessor(context, client, fridge);
+            return new OrderProcessor(context, grpcClient, fridge);
         });
     }
 
-    private OrderProcessor(ActorContext<OrderProcessorCommand> context, OrderServiceClient client, ActorRef<Fridge.FridgeCommand> fridge) {
+    private OrderProcessor(ActorContext<OrderProcessorCommand> context, OrderServiceClient grpcClient, ActorRef<Fridge.FridgeCommand> fridge) {
         super(context);
-        this.grpcClient = client;
+        this.grpcClient = grpcClient;
         this.fridge = fridge;
     }
 
@@ -60,7 +55,7 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
 
         getContext().getLog().info("OrderProcessor: sending order {} via gRPC ({} positions)", msg.order().orderId(), msg.order().lineItems().size());
 
-        // gRPC-Future-Ergebnis als Pekko-Message zurück an uns selbst.
+        // gRPC-Ergebnis als zurück an uns selbst.
         getContext().pipeToSelf(
                 grpcClient.processOrder(requestBuilder.build()),
                 (response, error) -> error != null

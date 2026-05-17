@@ -7,6 +7,7 @@ import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentCoordinator;
 import at.fhv.sysarch.lab2.homeautomation.environment.TemperatureEnvironment;
 import at.fhv.sysarch.lab2.homeautomation.environment.MqttEnvironmentClient;
 import at.fhv.sysarch.lab2.homeautomation.environment.WeatherEnvironment;
+import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.OrderServiceClient;
 import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttConnectionException;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.HttpServer;
 import org.apache.pekko.actor.typed.ActorRef;
@@ -16,6 +17,7 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
 import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
+import org.apache.pekko.grpc.GrpcClientSettings;
 import org.apache.pekko.http.javadsl.Http;
 import org.apache.pekko.http.javadsl.ServerBinding;
 
@@ -37,12 +39,19 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
     private HomeAutomationController(ActorContext<Void> context) {
         super(context);
 
+        // gRPC-Client für das externe Order-Processor-System wird einmalig erstellt
+        // über Fridge an die Per-Session-Children weitergegeben.
+        OrderServiceClient orderProcessorClient = OrderServiceClient.create(
+                GrpcClientSettings.fromConfig("orderprocessing.OrderService", context.getSystem()),
+                context.getSystem()
+        );
+
         ActorRef<AirCondition.AirConditionCommand> airCondition =
                 context.spawn(AirCondition.create("AC-01"), "airCondition");
         ActorRef<Blinds.BlindsCommand> blinds =
                 context.spawn(Blinds.create("BLINDS-01"), "blinds");
         ActorRef<Fridge.FridgeCommand> fridge =
-                context.spawn(Fridge.create("FRIDGE-01", FRIDGE_MAX_ITEMS, FRIDGE_MAX_WEIGHT_KG), "fridge");
+                context.spawn(Fridge.create("FRIDGE-01", FRIDGE_MAX_ITEMS, FRIDGE_MAX_WEIGHT_KG, orderProcessorClient), "fridge");
         ActorRef<MediaStation.MediaStationCommand> mediaStation =
                 context.spawn(MediaStation.create("MEDIA-01", blinds), "mediaStation");
 
@@ -57,19 +66,7 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         context.spawn(TemperatureEnvironment.create(environmentCoordinator), "temperatureEnvironment");
         context.spawn(WeatherEnvironment.create(environmentCoordinator), "weatherEnvironment");
 
-        registerWithReceptionist(airCondition, blinds, mediaStation, fridge, environmentCoordinator,
-                temperatureSensor, weatherSensor);
-
-        connectMqttClient(environmentCoordinator);
-        startHttpServer(environmentCoordinator, fridge, mediaStation, blinds, airCondition);
-
-        getContext().getLog().info("HomeAutomation application started — HTTP API on http://{}:{}", HTTP_HOST, HTTP_PORT);
-    }
-
-    private void registerWithReceptionist(ActorRef<AirCondition.AirConditionCommand> airCondition, ActorRef<Blinds.BlindsCommand> blinds, ActorRef<MediaStation.MediaStationCommand> mediaStation,
-                                          ActorRef<Fridge.FridgeCommand> fridge, ActorRef<EnvironmentCoordinator.Command> environmentCoordinator, ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor,
-                                          ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor) {
-        var receptionist = getContext().getSystem().receptionist();
+        var receptionist = context.getSystem().receptionist();
         receptionist.tell(Receptionist.register(AirCondition.SERVICE_KEY, airCondition));
         receptionist.tell(Receptionist.register(Blinds.SERVICE_KEY, blinds));
         receptionist.tell(Receptionist.register(MediaStation.SERVICE_KEY, mediaStation));
@@ -77,6 +74,11 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         receptionist.tell(Receptionist.register(EnvironmentCoordinator.SERVICE_KEY, environmentCoordinator));
         receptionist.tell(Receptionist.register(TemperatureSensor.SERVICE_KEY, temperatureSensor));
         receptionist.tell(Receptionist.register(WeatherSensor.SERVICE_KEY, weatherSensor));
+
+        connectMqttClient(environmentCoordinator);
+        startHttpServer(environmentCoordinator, fridge, mediaStation, blinds, airCondition);
+
+        getContext().getLog().info("HomeAutomation application started — HTTP API on http://{}:{}", HTTP_HOST, HTTP_PORT);
     }
 
     private void connectMqttClient(ActorRef<EnvironmentCoordinator.Command> environmentCoordinator) {

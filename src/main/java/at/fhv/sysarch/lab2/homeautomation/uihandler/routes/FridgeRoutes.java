@@ -31,6 +31,7 @@ import java.util.Map;
 
 public class FridgeRoutes extends AllDirectives {
     private static final Duration ASK_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration ORDER_ASK_TIMEOUT = Duration.ofSeconds(10);
 
     private final ActorRef<Fridge.FridgeCommand> fridgeActor;
     private final ActorSystem<?> system;
@@ -126,12 +127,7 @@ public class FridgeRoutes extends AllDirectives {
         return post(() ->
                 parameter("productId", productId ->
                         parameter("quantity", quantityStr -> {
-                            int quantity;
-                            try {
-                                quantity = Integer.parseInt(quantityStr);
-                            } catch (NumberFormatException ex) {
-                                throw new InvalidOrderException("Quantity must be a valid integer");
-                            }
+                            int quantity = Integer.parseInt(quantityStr);
                             if (quantity <= 0) {
                                 throw new InvalidOrderException("Quantity must be positive");
                             }
@@ -157,7 +153,7 @@ public class FridgeRoutes extends AllDirectives {
                             AskPattern.<Fridge.FridgeCommand, Fridge.OrderResponse>ask(
                                     fridgeActor,
                                     replyTo -> new Fridge.OrderProducts(request.items(), replyTo),
-                                    ASK_TIMEOUT,
+                                    ORDER_ASK_TIMEOUT,
                                     system.scheduler()
                             ),
                             orderResponse -> {
