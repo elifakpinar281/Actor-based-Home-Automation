@@ -55,7 +55,7 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         ActorRef<Fridge.FridgeCommand> fridge =
                 context.spawn(Fridge.create("FRIDGE-01", FRIDGE_MAX_ITEMS, FRIDGE_MAX_WEIGHT_KG, orderProcessorClient), "fridge");
         ActorRef<MediaStation.MediaStationCommand> mediaStation =
-                context.spawn(MediaStation.create("MEDIA-01", blinds), "mediaStation");
+                context.spawn(MediaStation.create("MEDIA-01"), "mediaStation");
 
         // Sensoren bekommen ihre Actuators über den Receptionist
         ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor =
