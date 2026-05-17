@@ -5,12 +5,17 @@ import at.fhv.sysarch.lab2.homeautomation.shared.model.environment.WeatherCondit
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
+import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class WeatherSensor extends AbstractBehavior<WeatherSensor.WeatherSensorCommand> {
     public interface WeatherSensorCommand {}
 
     public record WeatherMeasured(WeatherCondition condition) implements WeatherSensorCommand {}
     public record SetEnabled(boolean enabled) implements WeatherSensorCommand {}
+
+    public static final ServiceKey<WeatherSensorCommand> SERVICE_KEY =
+            ServiceKey.create(WeatherSensorCommand.class, "weatherSensor");
+
     private final ActorRef<Blinds.BlindsCommand> blinds;
     private boolean enabled = true;
 

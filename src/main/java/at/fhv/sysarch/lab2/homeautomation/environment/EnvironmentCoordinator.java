@@ -10,7 +10,11 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
 import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
+import org.apache.pekko.actor.typed.receptionist.Receptionist;
 import org.apache.pekko.actor.typed.receptionist.ServiceKey;
+
+import java.util.HashSet;
+import java.util.Set;
 
 public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordinator.Command> {
     public interface Command {}
@@ -26,12 +30,14 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
 
     public record GetCurrentState(ActorRef<EnvironmentSnapshot> replyTo) implements Command {}
 
+    private record TemperatureSensorsUpdated(Set<ActorRef<TemperatureSensor.TemperatureSensorCommand>> sensors) implements Command {}
+    private record WeatherSensorsUpdated(Set<ActorRef<WeatherSensor.WeatherSensorCommand>> sensors) implements Command {}
+
     public static final ServiceKey<Command> SERVICE_KEY =
             ServiceKey.create(Command.class, "environmentCoordinator");
 
-
-    private final ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor;
-    private final ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor;
+    private final Set<ActorRef<TemperatureSensor.TemperatureSensorCommand>> temperatureSensors = new HashSet<>();
+    private final Set<ActorRef<WeatherSensor.WeatherSensorCommand>> weatherSensors = new HashSet<>();
 
     private SimulationMode mode = SimulationMode.INTERNAL;
     private Temperature currentTemperature = Temperature.celsius(23.0);
@@ -40,16 +46,26 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
     private WeatherCondition fixedWeather = WeatherCondition.SUNNY;
 
 
-    public static Behavior<Command> create(ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor,
-            ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor) {
-        return Behaviors.setup(context -> new EnvironmentCoordinator(context, temperatureSensor, weatherSensor));
+    public static Behavior<Command> create() {
+        return Behaviors.setup(EnvironmentCoordinator::new);
     }
 
-    private EnvironmentCoordinator(ActorContext<Command> context, ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor, ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor) {
+    private EnvironmentCoordinator(ActorContext<Command> context) {
         super(context);
-        this.temperatureSensor = temperatureSensor;
-        this.weatherSensor = weatherSensor;
-        getContext().getLog().info("EnvironmentCoordinator started in mode {}", mode);
+
+        ActorRef<Receptionist.Listing> temperatureAdapter = context.messageAdapter(
+                Receptionist.Listing.class,
+                listing -> new TemperatureSensorsUpdated(listing.getServiceInstances(TemperatureSensor.SERVICE_KEY))
+        );
+        ActorRef<Receptionist.Listing> weatherAdapter = context.messageAdapter(
+                Receptionist.Listing.class,
+                listing -> new WeatherSensorsUpdated(listing.getServiceInstances(WeatherSensor.SERVICE_KEY))
+        );
+
+        context.getSystem().receptionist().tell(Receptionist.subscribe(TemperatureSensor.SERVICE_KEY, temperatureAdapter));
+        context.getSystem().receptionist().tell(Receptionist.subscribe(WeatherSensor.SERVICE_KEY, weatherAdapter));
+
+        getContext().getLog().info("EnvironmentCoordinator started in mode {} — discovering sensors via Receptionist", mode);
     }
 
     @Override
@@ -63,7 +79,23 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
                 .onMessage(MqttTemperatureUpdate.class, this::onMqttTemperatureUpdate)
                 .onMessage(MqttWeatherUpdate.class, this::onMqttWeatherUpdate)
                 .onMessage(GetCurrentState.class, this::onGetCurrentState)
+                .onMessage(TemperatureSensorsUpdated.class, this::onTemperatureSensorsUpdated)
+                .onMessage(WeatherSensorsUpdated.class, this::onWeatherSensorsUpdated)
                 .build();
+    }
+
+    private Behavior<Command> onTemperatureSensorsUpdated(TemperatureSensorsUpdated message) {
+        temperatureSensors.clear();
+        temperatureSensors.addAll(message.sensors());
+        getContext().getLog().info("EnvironmentCoordinator: temperature sensors discovered → {} registered", temperatureSensors.size());
+        return this;
+    }
+
+    private Behavior<Command> onWeatherSensorsUpdated(WeatherSensorsUpdated message) {
+        weatherSensors.clear();
+        weatherSensors.addAll(message.sensors());
+        getContext().getLog().info("EnvironmentCoordinator: weather sensors discovered → {} registered", weatherSensors.size());
+        return this;
     }
 
     private Behavior<Command> onSetMode(SetMode message) {
@@ -133,13 +165,25 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
     private void pushTemperature(double celsius) {
         double clamped = Temperature.clampToRange(celsius);
         currentTemperature = Temperature.celsius(clamped);
-        temperatureSensor.tell(new TemperatureSensor.TemperatureMeasured(clamped));
-        getContext().getLog().debug("Pushed temperature {}°C to sensor", clamped);
+        if (temperatureSensors.isEmpty()) {
+            getContext().getLog().debug("Pushed temperature {}°C — no temperature sensors registered yet", clamped);
+            return;
+        }
+        for (ActorRef<TemperatureSensor.TemperatureSensorCommand> sensor : temperatureSensors) {
+            sensor.tell(new TemperatureSensor.TemperatureMeasured(clamped));
+        }
+        getContext().getLog().debug("Pushed temperature {}°C to {} sensor(s)", clamped, temperatureSensors.size());
     }
 
     private void pushWeather(WeatherCondition condition) {
         currentWeather = condition;
-        weatherSensor.tell(new WeatherSensor.WeatherMeasured(condition));
-        getContext().getLog().debug("Pushed weather {} to sensor", condition);
+        if (weatherSensors.isEmpty()) {
+            getContext().getLog().debug("Pushed weather {} — no weather sensors registered yet", condition);
+            return;
+        }
+        for (ActorRef<WeatherSensor.WeatherSensorCommand> sensor : weatherSensors) {
+            sensor.tell(new WeatherSensor.WeatherMeasured(condition));
+        }
+        getContext().getLog().debug("Pushed weather {} to {} sensor(s)", condition, weatherSensors.size());
     }
 }

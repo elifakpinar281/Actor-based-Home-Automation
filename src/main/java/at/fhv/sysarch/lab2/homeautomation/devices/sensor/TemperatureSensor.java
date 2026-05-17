@@ -5,12 +5,16 @@ import at.fhv.sysarch.lab2.homeautomation.shared.model.environment.Temperature;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
+import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.TemperatureSensorCommand> {
     public interface TemperatureSensorCommand {}
 
     public record TemperatureMeasured(double celsius) implements TemperatureSensorCommand {}
     public record SetEnabled(boolean enabled) implements TemperatureSensorCommand {}
+
+    public static final ServiceKey<TemperatureSensorCommand> SERVICE_KEY =
+            ServiceKey.create(TemperatureSensorCommand.class, "temperatureSensor");
 
     private final ActorRef<AirCondition.AirConditionCommand> airCondition;
     private boolean enabled = true;
