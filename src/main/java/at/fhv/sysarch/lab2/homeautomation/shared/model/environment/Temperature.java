@@ -19,8 +19,12 @@ public record Temperature(double value, String unit) {
     }
 
     public static double clampToRange(double celsius) {
-        if (celsius < MIN_CELSIUS) return MIN_CELSIUS;
-        if (celsius > MAX_CELSIUS) return MAX_CELSIUS;
+        if (celsius < MIN_CELSIUS) {
+            return MIN_CELSIUS;
+        }
+        if (celsius > MAX_CELSIUS) {
+            return MAX_CELSIUS;
+        }
         return celsius;
     }
 

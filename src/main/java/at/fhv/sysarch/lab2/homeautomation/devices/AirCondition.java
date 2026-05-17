@@ -58,10 +58,10 @@ public class AirCondition extends AbstractBehavior<AirCondition.AirConditionComm
         boolean shouldCool = temperature.value() > COOLING_THRESHOLD_CELSIUS;
         if (shouldCool && !isCooling) {
             isCooling = true;
-            getContext().getLog().info("AirCondition '{}': {} > {}°C → START COOLING", identifier, temperature, COOLING_THRESHOLD_CELSIUS);
+            getContext().getLog().info("AirCondition '{}': {} > {}°C -> START COOLING", identifier, temperature, COOLING_THRESHOLD_CELSIUS);
         } else if (!shouldCool && isCooling) {
             isCooling = false;
-            getContext().getLog().info("AirCondition '{}': {} ≤ {}°C → STOP COOLING", identifier, temperature, COOLING_THRESHOLD_CELSIUS);
+            getContext().getLog().info("AirCondition '{}': {} ≤ {}°C -> STOP COOLING", identifier, temperature, COOLING_THRESHOLD_CELSIUS);
         }
         return Behaviors.same();
     }

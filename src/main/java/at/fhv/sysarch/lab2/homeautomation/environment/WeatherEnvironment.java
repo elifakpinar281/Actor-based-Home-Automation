@@ -53,7 +53,7 @@ public class WeatherEnvironment extends AbstractBehavior<WeatherEnvironment.Weat
     private Behavior<WeatherEnvironmentCommand> onTick(Tick tick) {
         currentCondition = pickDifferentCondition(currentCondition);
         coordinator.tell(new EnvironmentCoordinator.InternalWeatherUpdate(currentCondition));
-        getContext().getLog().debug("WeatherEnvironment: tick → {}", currentCondition);
+        getContext().getLog().debug("WeatherEnvironment: tick -> {}", currentCondition);
         return this;
     }
 

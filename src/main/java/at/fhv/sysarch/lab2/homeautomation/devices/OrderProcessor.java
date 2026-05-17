@@ -76,7 +76,7 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
             fridge.tell(new Fridge.OrderCompleted(msg.order(), receipt, msg.replyTo()));
         } else {
             String reason = "External processor rejected: " + msg.response().getMessage();
-            getContext().getLog().warn("OrderProcessor: order {} rejected — {}", msg.order().orderId(), msg.response().getMessage());
+            getContext().getLog().warn("OrderProcessor: order {} rejected - {}", msg.order().orderId(), msg.response().getMessage());
             fridge.tell(new Fridge.OrderFailed(msg.order(), reason, msg.replyTo()));
         }
         return Behaviors.stopped();
@@ -84,7 +84,7 @@ public class OrderProcessor extends AbstractBehavior<OrderProcessor.OrderProcess
 
     private Behavior<OrderProcessorCommand> onGrpcFailure(GrpcFailure msg) {
         String reason = "gRPC communication failed: " + msg.error().getMessage();
-        getContext().getLog().error("OrderProcessor: order {} failed — {}", msg.order().orderId(), msg.error().getMessage());
+        getContext().getLog().error("OrderProcessor: order {} failed - {}", msg.order().orderId(), msg.error().getMessage());
         fridge.tell(new Fridge.OrderFailed(msg.order(), reason, msg.replyTo()));
         return Behaviors.stopped();
     }

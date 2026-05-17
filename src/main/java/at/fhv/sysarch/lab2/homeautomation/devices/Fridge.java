@@ -60,7 +60,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         for (Product product : initialInventory) {
             inventory.put(product.id(), product);
         }
-        getContext().getLog().info("Fridge '{}' started — max: {} items, {} kg, initial: {} items / {} kg",
+        getContext().getLog().info("Fridge '{}' started - max: {} items, {} kg, initial: {} items / {} kg",
                 identifier, maxItems, maxWeightKg, currentItemCount(), currentWeightKg());
     }
 
@@ -112,11 +112,11 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     private Behavior<FridgeCommand> onConsumeProduct(ConsumeProduct msg) {
         Product product = inventory.get(msg.productId());
         if (product == null) {
-            getContext().getLog().warn("Fridge '{}': cannot consume — product {} not found", identifier, msg.productId());
+            getContext().getLog().warn("Fridge '{}': cannot consume - product {} not found", identifier, msg.productId());
             return Behaviors.same();
         }
         if (product.quantity() < msg.quantity()) {
-            getContext().getLog().warn("Fridge '{}': cannot consume {} x {} — only {} available", identifier, msg.quantity(), product.name(), product.quantity());
+            getContext().getLog().warn("Fridge '{}': cannot consume {} x {} - only {} available", identifier, msg.quantity(), product.name(), product.quantity());
             return Behaviors.same();
         }
 
@@ -159,14 +159,14 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         for (OrderLineItem item : msg.order().lineItems()) {
             Product existing = inventory.get(item.productId());
             if (existing == null) { // sollte nicht passieren, da Validierung ja schon geprüft hat
-                getContext().getLog().error("Fridge '{}': inventory entry for {} missing during order completion — skipping", identifier, item.productId());
+                getContext().getLog().error("Fridge '{}': inventory entry for {} missing during order completion - skipping", identifier, item.productId());
                 continue;
             }
             Product updated = existing.addQuantity(item.quantity());
             inventory.put(updated.id(), updated);
         }
 
-        getContext().getLog().info("Fridge '{}': order {} completed — {}", identifier, msg.order().orderId(), msg.receipt());
+        getContext().getLog().info("Fridge '{}': order {} completed - {}", identifier, msg.order().orderId(), msg.receipt());
 
         if (msg.replyTo() != null) {
             msg.replyTo().tell(new OrderResponse(true, "Order processed successfully", msg.receipt()));
@@ -176,7 +176,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
     private Behavior<FridgeCommand> onOrderFailed(OrderFailed msg) {
         replaceOrderInHistory(msg.order().failed());
-        getContext().getLog().warn("Fridge '{}': order {} failed — {}", identifier, msg.order().orderId(), msg.reason());
+        getContext().getLog().warn("Fridge '{}': order {} failed - {}", identifier, msg.order().orderId(), msg.reason());
         if (msg.replyTo() != null) {
             msg.replyTo().tell(new OrderResponse(false, msg.reason(), null));
         }
@@ -230,7 +230,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     private void triggerAutoOrder(String productId) {
         Product product = inventory.get(productId);
         if (product == null) {
-            getContext().getLog().warn("Fridge '{}': auto-order skipped — product {} no longer in inventory", identifier, productId);
+            getContext().getLog().warn("Fridge '{}': auto-order skipped - product {} no longer in inventory", identifier, productId);
             return;
         }
 
@@ -240,13 +240,13 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         double neededWeightKg = product.weight() * target;
 
         if (target > remainingSlots) {
-            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' — needs {} slots but only {} available",
+            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' - needs {} slots but only {} available",
                     identifier, product.name(), target, remainingSlots);
             return;
         }
 
         if (neededWeightKg > remainingWeightKg) {
-            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' — needs {} kg but only {} kg remaining",
+            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' - needs {} kg but only {} kg remaining",
                     identifier, product.name(),
                     String.format("%.2f", neededWeightKg), String.format("%.2f", remainingWeightKg));
             return;

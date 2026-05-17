@@ -34,7 +34,7 @@ public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
     private Blinds(ActorContext<BlindsCommand> context, String identifier) {
         super(context);
         this.identifier = identifier;
-        getContext().getLog().info("Blinds '{}' started — initial state: OPEN (awaiting first weather update)", identifier);
+        getContext().getLog().info("Blinds '{}' started - initial state: OPEN (awaiting first weather update)", identifier);
     }
 
     @Override

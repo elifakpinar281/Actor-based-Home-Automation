@@ -65,7 +65,7 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
         context.getSystem().receptionist().tell(Receptionist.subscribe(TemperatureSensor.SERVICE_KEY, temperatureAdapter));
         context.getSystem().receptionist().tell(Receptionist.subscribe(WeatherSensor.SERVICE_KEY, weatherAdapter));
 
-        getContext().getLog().info("EnvironmentCoordinator started in mode {} — discovering sensors via Receptionist", mode);
+        getContext().getLog().info("EnvironmentCoordinator started in mode {} - discovering sensors via Receptionist", mode);
     }
 
     @Override
@@ -87,21 +87,21 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
     private Behavior<Command> onTemperatureSensorsUpdated(TemperatureSensorsUpdated message) {
         temperatureSensors.clear();
         temperatureSensors.addAll(message.sensors());
-        getContext().getLog().info("EnvironmentCoordinator: temperature sensors discovered → {} registered", temperatureSensors.size());
+        getContext().getLog().info("EnvironmentCoordinator: temperature sensors discovered -> {} registered", temperatureSensors.size());
         return this;
     }
 
     private Behavior<Command> onWeatherSensorsUpdated(WeatherSensorsUpdated message) {
         weatherSensors.clear();
         weatherSensors.addAll(message.sensors());
-        getContext().getLog().info("EnvironmentCoordinator: weather sensors discovered → {} registered", weatherSensors.size());
+        getContext().getLog().info("EnvironmentCoordinator: weather sensors discovered -> {} registered", weatherSensors.size());
         return this;
     }
 
     private Behavior<Command> onSetMode(SetMode message) {
         SimulationMode previous = mode;
         mode = message.mode();
-        getContext().getLog().info("Simulation mode changed: {} → {}", previous, mode);
+        getContext().getLog().info("Simulation mode changed: {} -> {}", previous, mode);
         if (mode == SimulationMode.FIXED) {
             pushTemperature(fixedTemperature);
             pushWeather(fixedWeather);
@@ -166,7 +166,7 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
         double clamped = Temperature.clampToRange(celsius);
         currentTemperature = Temperature.celsius(clamped);
         if (temperatureSensors.isEmpty()) {
-            getContext().getLog().debug("Pushed temperature {}°C — no temperature sensors registered yet", clamped);
+            getContext().getLog().debug("Pushed temperature {}°C -> no temperature sensors registered yet", clamped);
             return;
         }
         for (ActorRef<TemperatureSensor.TemperatureSensorCommand> sensor : temperatureSensors) {
@@ -178,7 +178,7 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
     private void pushWeather(WeatherCondition condition) {
         currentWeather = condition;
         if (weatherSensors.isEmpty()) {
-            getContext().getLog().debug("Pushed weather {} — no weather sensors registered yet", condition);
+            getContext().getLog().debug("Pushed weather {} - no weather sensors registered yet", condition);
             return;
         }
         for (ActorRef<WeatherSensor.WeatherSensorCommand> sensor : weatherSensors) {

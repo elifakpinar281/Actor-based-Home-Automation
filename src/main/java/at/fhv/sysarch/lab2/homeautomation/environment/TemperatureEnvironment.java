@@ -58,7 +58,7 @@ public class TemperatureEnvironment extends AbstractBehavior<TemperatureEnvironm
         currentCelsius = Temperature.clampToRange(currentCelsius + delta);
 
         coordinator.tell(new EnvironmentCoordinator.InternalTemperatureUpdate(currentCelsius));
-        getContext().getLog().debug("TemperatureEnvironment: tick → {}°C (Δ {})",
+        getContext().getLog().debug("TemperatureEnvironment: tick -> {}°C (Δ {})",
                 String.format("%.2f", currentCelsius), String.format("%+.2f", delta));
         return this;
     }

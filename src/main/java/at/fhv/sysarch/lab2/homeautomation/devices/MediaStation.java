@@ -51,7 +51,7 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
 
     private Behavior<MediaStationCommand> onPlayMovie(PlayMovie msg) {
         if (isPlaying) {
-            getContext().getLog().warn("Media Station '{}': cannot play '{}' — '{}' already playing", identifier, msg.movieName(), currentMovie);
+            getContext().getLog().warn("Media Station '{}': cannot play '{}' - '{}' already playing", identifier, msg.movieName(), currentMovie);
             msg.replyTo().tell(new PlayMovieResult(
                     false,
                     "Another movie is already playing: '" + currentMovie + "'",
