@@ -165,10 +165,6 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
     private void pushTemperature(double celsius) {
         double clamped = Temperature.clampToRange(celsius);
         currentTemperature = Temperature.celsius(clamped);
-        if (temperatureSensors.isEmpty()) {
-            getContext().getLog().debug("Pushed temperature {}°C -> no temperature sensors registered yet", clamped);
-            return;
-        }
         for (ActorRef<TemperatureSensor.TemperatureSensorCommand> sensor : temperatureSensors) {
             sensor.tell(new TemperatureSensor.TemperatureMeasured(clamped));
         }
@@ -177,10 +173,6 @@ public class EnvironmentCoordinator extends AbstractBehavior<EnvironmentCoordina
 
     private void pushWeather(WeatherCondition condition) {
         currentWeather = condition;
-        if (weatherSensors.isEmpty()) {
-            getContext().getLog().debug("Pushed weather {} - no weather sensors registered yet", condition);
-            return;
-        }
         for (ActorRef<WeatherSensor.WeatherSensorCommand> sensor : weatherSensors) {
             sensor.tell(new WeatherSensor.WeatherMeasured(condition));
         }

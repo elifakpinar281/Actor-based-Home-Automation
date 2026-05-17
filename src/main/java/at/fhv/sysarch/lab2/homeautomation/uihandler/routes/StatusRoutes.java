@@ -15,8 +15,6 @@ import org.apache.pekko.http.javadsl.server.AllDirectives;
 import org.apache.pekko.http.javadsl.server.Route;
 
 import java.time.Duration;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.concurrent.CompletionStage;
 
 public class StatusRoutes extends AllDirectives {
@@ -39,30 +37,30 @@ public class StatusRoutes extends AllDirectives {
     }
 
     public Route routes() {
-        return concat(
-                path("status", () -> get(this::getAggregatedStatus)),
-                path("devices/status", () -> get(this::getDeviceStatus))
-        );
+        return path("status", () -> get(this::getAggregatedStatus));
     }
 
     private Route getAggregatedStatus() {
         CompletionStage<EnvironmentSnapshot> environmentFuture =
-                AskPattern.<EnvironmentCoordinator.Command, EnvironmentSnapshot>ask(
+                AskPattern.ask(
                         environmentCoordinator,
                         EnvironmentCoordinator.GetCurrentState::new,
                         ASK_TIMEOUT, system.scheduler());
         CompletionStage<AirCondition.StatusResponse> acFuture =
-                AskPattern.<AirCondition.AirConditionCommand, AirCondition.StatusResponse>ask(
+                AskPattern.ask(
                         airConditionActor,
                         AirCondition.GetStatus::new,
                         ASK_TIMEOUT, system.scheduler());
         CompletionStage<Blinds.StatusResponse> blindsFuture =
-                AskPattern.<Blinds.BlindsCommand, Blinds.StatusResponse>ask(
+                AskPattern.ask(
                         blindsActor,
                         Blinds.GetStatus::new,
                         ASK_TIMEOUT, system.scheduler());
         CompletionStage<MediaStation.StatusResponse> mediaFuture =
-                AskPattern.<MediaStation.MediaStationCommand, MediaStation.StatusResponse>ask(mediaStationActor, MediaStation.GetStatus::new, ASK_TIMEOUT, system.scheduler());
+                AskPattern.ask(
+                        mediaStationActor,
+                        MediaStation.GetStatus::new,
+                        ASK_TIMEOUT, system.scheduler());
 
         CompletionStage<StatusDto> aggregated = environmentFuture.thenCompose(env ->
                 acFuture.thenCompose(ac ->
@@ -82,15 +80,5 @@ public class StatusRoutes extends AllDirectives {
         );
 
         return onSuccess(aggregated, dto -> complete(StatusCodes.OK, dto, Jackson.marshaller()));
-    }
-
-    private Route getDeviceStatus() {
-        Map<String, String> status = new LinkedHashMap<>();
-        status.put("environment", "active");
-        status.put("fridge", "active");
-        status.put("ac", "active");
-        status.put("blinds", "active");
-        status.put("mediaStation", "active");
-        return complete(StatusCodes.OK, status, Jackson.marshaller());
     }
 }

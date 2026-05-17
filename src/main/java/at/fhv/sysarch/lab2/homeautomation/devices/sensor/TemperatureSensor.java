@@ -5,7 +5,11 @@ import at.fhv.sysarch.lab2.homeautomation.shared.model.environment.Temperature;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;
 import org.apache.pekko.actor.typed.javadsl.*;
+import org.apache.pekko.actor.typed.receptionist.Receptionist;
 import org.apache.pekko.actor.typed.receptionist.ServiceKey;
+
+import java.util.HashSet;
+import java.util.Set;
 
 public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.TemperatureSensorCommand> {
     public interface TemperatureSensorCommand {}
@@ -13,20 +17,28 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
     public record TemperatureMeasured(double celsius) implements TemperatureSensorCommand {}
     public record SetEnabled(boolean enabled) implements TemperatureSensorCommand {}
 
+    private record AirConditionsUpdated(Set<ActorRef<AirCondition.AirConditionCommand>> airConditions) implements TemperatureSensorCommand {}
+
     public static final ServiceKey<TemperatureSensorCommand> SERVICE_KEY =
             ServiceKey.create(TemperatureSensorCommand.class, "temperatureSensor");
 
-    private final ActorRef<AirCondition.AirConditionCommand> airCondition;
+    private final Set<ActorRef<AirCondition.AirConditionCommand>> airConditions = new HashSet<>();
     private boolean enabled = true;
 
-    public static Behavior<TemperatureSensorCommand> create(ActorRef<AirCondition.AirConditionCommand> airCondition) {
-        return Behaviors.setup(context -> new TemperatureSensor(context, airCondition));
+    public static Behavior<TemperatureSensorCommand> create() {
+        return Behaviors.setup(TemperatureSensor::new);
     }
 
-    private TemperatureSensor(ActorContext<TemperatureSensorCommand> context, ActorRef<AirCondition.AirConditionCommand> airCondition) {
+    private TemperatureSensor(ActorContext<TemperatureSensorCommand> context) {
         super(context);
-        this.airCondition = airCondition;
-        getContext().getLog().info("TemperatureSensor started");
+
+        ActorRef<Receptionist.Listing> adapter = context.messageAdapter(
+                Receptionist.Listing.class,
+                listing -> new AirConditionsUpdated(listing.getServiceInstances(AirCondition.SERVICE_KEY))
+        );
+        context.getSystem().receptionist().tell(Receptionist.subscribe(AirCondition.SERVICE_KEY, adapter));
+
+        getContext().getLog().info("TemperatureSensor started - discovering AC actuators via Receptionist");
     }
 
     @Override
@@ -34,6 +46,7 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
         return newReceiveBuilder()
                 .onMessage(TemperatureMeasured.class, this::onTemperatureMeasured)
                 .onMessage(SetEnabled.class, this::onSetEnabled)
+                .onMessage(AirConditionsUpdated.class, this::onAirConditionsUpdated)
                 .build();
     }
 
@@ -43,14 +56,25 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
             return this;
         }
         Temperature temperature = Temperature.celsius(measurement.celsius());
-        getContext().getLog().info("TemperatureSensor: measured {}", temperature);
-        airCondition.tell(new AirCondition.EnrichedTemperature(temperature));
+        getContext().getLog().info("TemperatureSensor: measured {} - broadcasting to {} subscriber(s)",
+                temperature, airConditions.size());
+
+        for (ActorRef<AirCondition.AirConditionCommand> ac : airConditions) {
+            ac.tell(new AirCondition.EnrichedTemperature(temperature));
+        }
         return this;
     }
 
     private Behavior<TemperatureSensorCommand> onSetEnabled(SetEnabled message) {
         this.enabled = message.enabled();
         getContext().getLog().info("TemperatureSensor {}", enabled ? "enabled" : "disabled");
+        return this;
+    }
+
+    private Behavior<TemperatureSensorCommand> onAirConditionsUpdated(AirConditionsUpdated message) {
+        airConditions.clear();
+        airConditions.addAll(message.airConditions());
+        getContext().getLog().info("TemperatureSensor: AC actuators discovered -> {} registered", airConditions.size());
         return this;
     }
 }

@@ -32,6 +32,8 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
     private static final int FRIDGE_MAX_ITEMS = 80;
     private static final double FRIDGE_MAX_WEIGHT_KG = 25.0;
 
+    private MqttEnvironmentClient mqttClient;
+
     public static Behavior<Void> create() {
         return Behaviors.setup(HomeAutomationController::new);
     }
@@ -55,10 +57,11 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         ActorRef<MediaStation.MediaStationCommand> mediaStation =
                 context.spawn(MediaStation.create("MEDIA-01", blinds), "mediaStation");
 
+        // Sensoren bekommen ihre Actuators über den Receptionist
         ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor =
-                context.spawn(TemperatureSensor.create(airCondition), "temperatureSensor");
+                context.spawn(TemperatureSensor.create(), "temperatureSensor");
         ActorRef<WeatherSensor.WeatherSensorCommand> weatherSensor =
-                context.spawn(WeatherSensor.create(blinds), "weatherSensor");
+                context.spawn(WeatherSensor.create(), "weatherSensor");
 
         ActorRef<EnvironmentCoordinator.Command> environmentCoordinator =
                 context.spawn(EnvironmentCoordinator.create(), "environmentCoordinator");
@@ -83,8 +86,9 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
 
     private void connectMqttClient(ActorRef<EnvironmentCoordinator.Command> environmentCoordinator) {
         try {
-            MqttEnvironmentClient mqttClient = new MqttEnvironmentClient(environmentCoordinator);
-            mqttClient.connect();
+            MqttEnvironmentClient client = new MqttEnvironmentClient(environmentCoordinator);
+            client.connect();
+            this.mqttClient = client;
             getContext().getLog().info("MQTT connected successfully");
         } catch (MqttConnectionException ex) {
             getContext().getLog().warn("MQTT not available (system will run without external weather): {}", ex.getMessage());
@@ -115,6 +119,13 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
     }
 
     private HomeAutomationController onPostStop() {
+        if (mqttClient != null) {
+            try {
+                mqttClient.disconnect();
+            } catch (MqttConnectionException ex) {
+                getContext().getLog().warn("MQTT disconnect failed: {}", ex.getMessage());
+            }
+        }
         getContext().getLog().info("HomeAutomation application stopped");
         return this;
     }
