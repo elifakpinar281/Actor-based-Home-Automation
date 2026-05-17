@@ -33,6 +33,7 @@ public class TemperatureSensor extends AbstractBehavior<TemperatureSensor.Temper
     private TemperatureSensor(ActorContext<TemperatureSensorCommand> context) {
         super(context);
 
+        // Irrelevante Updates werden ignoriert. Nur Updates der AirCondition-Services werden verarbeitet.
         ActorRef<Receptionist.Listing> adapter = context.messageAdapter(
                 Receptionist.Listing.class,
                 listing -> listing.isForKey(AirCondition.SERVICE_KEY)

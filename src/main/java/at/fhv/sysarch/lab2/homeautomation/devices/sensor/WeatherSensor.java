@@ -33,6 +33,7 @@ public class WeatherSensor extends AbstractBehavior<WeatherSensor.WeatherSensorC
     private WeatherSensor(ActorContext<WeatherSensorCommand> context) {
         super(context);
 
+        // Irrelevante Updates werden ignoriert. Nur Updates des Blind-Services werden verarbeitet.
         ActorRef<Receptionist.Listing> adapter = context.messageAdapter(
                 Receptionist.Listing.class,
                 listing -> listing.isForKey(Blinds.SERVICE_KEY)
@@ -40,7 +41,6 @@ public class WeatherSensor extends AbstractBehavior<WeatherSensor.WeatherSensorC
                         : new IgnoredListing()
         );
         context.getSystem().receptionist().tell(Receptionist.subscribe(Blinds.SERVICE_KEY, adapter));
-
         getContext().getLog().info("WeatherSensor started - discovering Blinds actuators via Receptionist");
     }
 
