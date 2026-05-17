@@ -49,8 +49,7 @@ public class HttpServer extends AllDirectives {
                 statusRoutes.routes(),
                 environmentRoutes.routes(),
                 fridgeRoutes.routes(),
-                mediaRoutes.routes(),
-                path("hello", () -> get(() -> complete("<h1>Say hello to Pekko-HTTP</h1>")))
+                mediaRoutes.routes()
         )));
     }
 

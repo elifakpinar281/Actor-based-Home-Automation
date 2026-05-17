@@ -7,8 +7,6 @@ import org.apache.pekko.actor.typed.javadsl.AbstractBehavior;
 import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
-import org.apache.pekko.actor.typed.javadsl.StashBuffer;
-import org.apache.pekko.actor.typed.receptionist.Receptionist;
 import org.apache.pekko.actor.typed.receptionist.ServiceKey;
 
 public class MediaStation extends AbstractBehavior<MediaStation.MediaStationCommand> {
@@ -19,37 +17,25 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
     public record GetStatus(ActorRef<StatusResponse> replyTo) implements MediaStationCommand {}
 
     public record StatusResponse(boolean isPlaying, String currentMovie) {}
-    private record BlindsListingUpdated(Receptionist.Listing listing) implements MediaStationCommand {}
 
     public static final ServiceKey<MediaStationCommand> SERVICE_KEY =
             ServiceKey.create(MediaStationCommand.class, "mediaStation");
 
-    private static final int STASH_CAPACITY = 100;
-
-    public static Behavior<MediaStationCommand> create(String identifier) {
-        return Behaviors.withStash(STASH_CAPACITY, stash ->
-                Behaviors.setup(context -> new MediaStation(context, stash, identifier))
-        );
+    public static Behavior<MediaStationCommand> create(String identifier, ActorRef<Blinds.BlindsCommand> blinds) {
+        return Behaviors.setup(context -> new MediaStation(context, identifier, blinds));
     }
 
     private final String identifier;
+    private final ActorRef<Blinds.BlindsCommand> blinds;
 
-    // Puffert Commands, bis der Blinds Actor über Receptionist gefunden wurde.
-    // Play/Stop Requests gehen nicht verloren und werden erst verarbeitet, wenn alle Abhängigkeiten verfügbar sind.
-    private final StashBuffer<MediaStationCommand> stash;
-
-    private ActorRef<Blinds.BlindsCommand> blindsActor;
     private boolean isPlaying = false;
     private String currentMovie;
 
-    private MediaStation(ActorContext<MediaStationCommand> context, StashBuffer<MediaStationCommand> stash, String identifier) {
+    private MediaStation(ActorContext<MediaStationCommand> context, String identifier, ActorRef<Blinds.BlindsCommand> blinds) {
         super(context);
-        this.stash = stash;
         this.identifier = identifier;
-
-        ActorRef<Receptionist.Listing> listingAdapter = context.messageAdapter(Receptionist.Listing.class, BlindsListingUpdated::new);
-        context.getSystem().receptionist().tell(Receptionist.subscribe(Blinds.SERVICE_KEY, listingAdapter));
-        getContext().getLog().info("Media Station '{}' started — awaiting Blinds discovery", identifier);
+        this.blinds = blinds;
+        getContext().getLog().info("Media Station '{}' started", identifier);
     }
 
     @Override
@@ -58,34 +44,11 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
                 .onMessage(PlayMovie.class, this::onPlayMovie)
                 .onMessage(StopMovie.class, this::onStopMovie)
                 .onMessage(GetStatus.class, this::onGetStatus)
-                .onMessage(BlindsListingUpdated.class, this::onBlindsListingUpdated)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
     }
 
-    private Behavior<MediaStationCommand> onBlindsListingUpdated(BlindsListingUpdated msg) {
-        msg.listing().getServiceInstances(Blinds.SERVICE_KEY).stream().findFirst()
-                .ifPresent(blinds -> {
-                    if (this.blindsActor == null) {
-                        this.blindsActor = blinds;
-                        getContext().getLog().info("MediaStation '{}': Blinds discovered, unstashing {} pending commands", identifier, stash.size());
-                    } else {
-                        this.blindsActor = blinds;
-                    }
-                });
-
-        if (blindsActor != null && stash.nonEmpty()) {
-            return stash.unstashAll(this);
-        }
-        return Behaviors.same();
-    }
-
     private Behavior<MediaStationCommand> onPlayMovie(PlayMovie msg) {
-        if (blindsActor == null) {
-            getContext().getLog().info("Media Station '{}': Blinds not yet available — stashing PlayMovie('{}')", identifier, msg.movieName());
-            stash.stash(msg);
-            return Behaviors.same();
-        }
         if (isPlaying) {
             getContext().getLog().warn("Media Station '{}': cannot play '{}' — '{}' already playing", identifier, msg.movieName(), currentMovie);
             return Behaviors.same();
@@ -93,17 +56,12 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
 
         isPlaying = true;
         currentMovie = msg.movieName();
-        blindsActor.tell(new Blinds.MovieStatusChanged(true));
+        blinds.tell(new Blinds.MovieStatusChanged(true));
         getContext().getLog().info("Media Station '{}': NOW PLAYING '{}'", identifier, currentMovie);
         return Behaviors.same();
     }
 
     private Behavior<MediaStationCommand> onStopMovie(StopMovie msg) {
-        if (blindsActor == null) {
-            getContext().getLog().info("Media Station '{}': Blinds not yet available — stashing StopMovie", identifier);
-            stash.stash(msg);
-            return Behaviors.same();
-        }
         if (!isPlaying) {
             getContext().getLog().warn("Media Station '{}': no movie is currently playing", identifier);
             return Behaviors.same();
@@ -112,7 +70,7 @@ public class MediaStation extends AbstractBehavior<MediaStation.MediaStationComm
         String stoppedMovie = currentMovie;
         isPlaying = false;
         currentMovie = null;
-        blindsActor.tell(new Blinds.MovieStatusChanged(false));
+        blinds.tell(new Blinds.MovieStatusChanged(false));
         getContext().getLog().info("Media Station '{}': STOPPED '{}'", identifier, stoppedMovie);
         return Behaviors.same();
     }

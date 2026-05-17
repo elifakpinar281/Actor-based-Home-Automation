@@ -31,6 +31,7 @@ public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command>
         try {
             Class.forName("org.h2.Driver");
             Connection connection = DriverManager.getConnection(JDBC_URL, "sa", "");
+            connection.setAutoCommit(false);
             try (Statement statement = connection.createStatement()) {
                 statement.execute("""
                     CREATE TABLE IF NOT EXISTS orders (
@@ -43,6 +44,7 @@ public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command>
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """);
+                connection.commit();
             }
             return connection;
         } catch (ClassNotFoundException ex) {
@@ -62,26 +64,29 @@ public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command>
 
     private Behavior<Command> onPersist(PersistOrder msg) {
         String orderId = UUID.randomUUID().toString();
-        double totalPrice = msg.items.stream()
-                .mapToDouble(item -> item.quantity() * item.unitPrice())
-                .sum();
 
-        try {
-            dbConnection.setAutoCommit(false);
-            try (PreparedStatement preparedStatement = dbConnection.prepareStatement(INSERT_SQL)) {
-                for (ValidationActor.OrderItemData item : msg.items) {
-                    preparedStatement.setString(1, orderId + "-" + item.productId());
-                    preparedStatement.setString(2, item.productId());
-                    preparedStatement.setInt(3, item.quantity());
-                    preparedStatement.setDouble(4, item.unitPrice());
-                    preparedStatement.setDouble(5, item.quantity() * item.unitPrice());
-                    preparedStatement.setString(6, "COMPLETED");
-                    preparedStatement.addBatch();
-                }
-                preparedStatement.executeBatch();
+        double rawTotal = 0.0;
+        for (ValidationActor.OrderItemData item : msg.items) {
+            rawTotal += item.quantity() * item.unitPrice();
+        }
+        double totalPrice = Math.round(rawTotal * 100.0) / 100.0;
+
+        try (PreparedStatement preparedStatement = dbConnection.prepareStatement(INSERT_SQL)) {
+            int lineNumber = 1;
+            for (ValidationActor.OrderItemData item : msg.items) {
+                preparedStatement.setString(1, orderId + "-" + lineNumber);
+                preparedStatement.setString(2, item.productId());
+                preparedStatement.setInt(3, item.quantity());
+                preparedStatement.setDouble(4, item.unitPrice());
+                double linePrice = Math.round(item.quantity() * item.unitPrice() * 100.0) / 100.0;
+                preparedStatement.setDouble(5, linePrice);
+                preparedStatement.setString(6, "COMPLETED");
+                preparedStatement.addBatch();
+                lineNumber++;
             }
+            preparedStatement.executeBatch();
             dbConnection.commit();
-            getContext().getLog().info("PersistenceActor: persisted order {} ({} items, total {})", orderId, msg.items.size(), totalPrice);
+            getContext().getLog().info("PersistenceActor: persisted order {} ({} items, total €{})", orderId, msg.items.size(), totalPrice);
             msg.replyTo.tell(ValidationActor.ValidationResult.success(orderId, msg.items));
         } catch (SQLException ex) {
             rollbackSilently();

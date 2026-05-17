@@ -24,7 +24,6 @@ import org.apache.pekko.actor.typed.receptionist.Receptionist;
 
 
 public class HomeAutomationController extends AbstractBehavior<Void> {
-
     private static final String HTTP_HOST = "localhost";
     private static final int HTTP_PORT = 8084;
 
@@ -45,7 +44,7 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
         ActorRef<Fridge.FridgeCommand> fridge =
                 context.spawn(Fridge.create("FRIDGE-01", FRIDGE_MAX_ITEMS, FRIDGE_MAX_WEIGHT_KG), "fridge");
         ActorRef<MediaStation.MediaStationCommand> mediaStation =
-                context.spawn(MediaStation.create("MEDIA-01"), "mediaStation");
+                context.spawn(MediaStation.create("MEDIA-01", blinds), "mediaStation");
 
         ActorRef<TemperatureSensor.TemperatureSensorCommand> temperatureSensor =
                 context.spawn(TemperatureSensor.create(airCondition), "temperatureSensor");
@@ -67,8 +66,8 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
     }
 
     private void registerWithReceptionist(ActorRef<AirCondition.AirConditionCommand> airCondition,
-            ActorRef<Blinds.BlindsCommand> blinds, ActorRef<MediaStation.MediaStationCommand> mediaStation,
-            ActorRef<Fridge.FridgeCommand> fridge, ActorRef<EnvironmentCoordinator.Command> environmentCoordinator) {
+                                          ActorRef<Blinds.BlindsCommand> blinds, ActorRef<MediaStation.MediaStationCommand> mediaStation,
+                                          ActorRef<Fridge.FridgeCommand> fridge, ActorRef<EnvironmentCoordinator.Command> environmentCoordinator) {
         var receptionist = getContext().getSystem().receptionist();
         receptionist.tell(Receptionist.register(AirCondition.SERVICE_KEY, airCondition));
         receptionist.tell(Receptionist.register(Blinds.SERVICE_KEY, blinds));

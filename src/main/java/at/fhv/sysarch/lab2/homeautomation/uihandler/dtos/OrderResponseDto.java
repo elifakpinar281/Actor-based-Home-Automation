@@ -1,0 +1,8 @@
+package at.fhv.sysarch.lab2.homeautomation.uihandler.dtos;
+
+public record OrderResponseDto(
+        boolean success,
+        String message,
+        ReceiptDto receipt
+) {
+}

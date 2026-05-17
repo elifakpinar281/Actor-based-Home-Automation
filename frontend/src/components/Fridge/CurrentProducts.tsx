@@ -91,7 +91,7 @@ export function CurrentProducts() {
                     <div className="neu-card p-4">
                         <p className="topbar-label">Weight</p>
                         <p className="font-(family-name:--font-digit) text-2xl text-ink mt-1">
-                            {capacity ? `${capacity.currentWeight.toFixed(1)} kg` : "—"}
+                            {capacity ? `${capacity.currentWeight.toFixed(2)} kg` : "—"}
                         </p>
                     </div>
                 </div>
@@ -102,8 +102,8 @@ export function CurrentProducts() {
                         <div className="h-full bg-accent" style={{ width: `${usedPct}%` }} />
                     </div>
                     <div className="flex justify-between text-xs text-ink-soft mt-2">
-                        <span>{capacity ? `${capacity.currentWeight.toFixed(1)} kg used` : "—"}</span>
-                        <span>{capacity ? `${freeKg.toFixed(1)} kg free` : "—"}</span>
+                        <span>{capacity ? `${capacity.currentWeight.toFixed(2)} kg used` : "—"}</span>
+                        <span>{capacity ? `${freeKg.toFixed(2)} kg free` : "—"}</span>
                     </div>
                 </div>
             </div>

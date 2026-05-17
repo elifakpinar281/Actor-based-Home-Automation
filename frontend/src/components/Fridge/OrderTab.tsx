@@ -6,9 +6,9 @@ import { useProducts } from "../../hooks/useProducts";
 import { useToast } from "../../hooks/useToast";
 import { Product } from "../../lib/types";
 import { ProductIcon } from "./ProductIcon";
-import {Hint} from "@/src/components/Hint";
-import {useCapacity} from "@/src/hooks/useCapacity";
-import {useOrders} from "@/src/hooks/useOrders";
+import { Hint } from "@/src/components/Hint";
+import { useCapacity } from "@/src/hooks/useCapacity";
+import { useOrders } from "@/src/hooks/useOrders";
 
 export function OrderTab() {
     const { products, reload: reloadProducts } = useProducts();
@@ -36,9 +36,6 @@ export function OrderTab() {
     async function submitOrder() {
         if (Object.keys(cart).length === 0) return;
         setSubmitting(true);
-        const knownIds = new Set(
-            (await api.getOrderHistory().catch(() => [])).map((o: { orderId: string }) => o.orderId)
-        );
         try {
             await api.orderProducts(cart);
             push("Order placed successfully!", "success");
@@ -48,29 +45,10 @@ export function OrderTab() {
             reloadOrders();
         } catch (e) {
             const raw = (e as Error).message;
-            if (raw.toLowerCase().includes("failed to fetch")) {
-                await waitForNewOrder(knownIds, 10_000);
-                push("Order placed successfully!", "success");
-                setCart({});
-                reloadProducts();
-                reloadCapacity();
-                reloadOrders();
-            } else {
-                push(extractBackendMessage(raw), "error");
-            }
+            push(extractBackendMessage(raw), "error");
         } finally {
             setSubmitting(false);
         }
-    }
-
-    async function waitForNewOrder(knownIds: Set<string>, timeoutMs: number): Promise<boolean> {
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-            const current = await api.getOrderHistory().catch(() => []);
-            if (current.some((o: { orderId: string }) => !knownIds.has(o.orderId))) return true;
-            await new Promise(r => setTimeout(r, 800));
-        }
-        return false;
     }
 
     let subtotal = 0;

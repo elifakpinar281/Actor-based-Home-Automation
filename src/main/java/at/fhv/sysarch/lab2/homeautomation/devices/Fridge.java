@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 
 public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
-
     public interface FridgeCommand {}
 
     public record GetProducts(ActorRef<ProductsResponse> replyTo) implements FridgeCommand {}
@@ -150,14 +149,12 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         replaceOrderInHistory(msg.order().completed(msg.receipt().receiptId()));
         for (OrderLineItem item : msg.order().lineItems()) {
             Product existing = inventory.get(item.productId());
-            if (existing != null) {
-                Product updated = existing.addQuantity(item.quantity());
-                inventory.put(updated.id(), updated);
-            } else {
-                // Sollte nicht passieren.
-                Product fresh = new Product(item.productId(), item.productName(), item.weightPerUnit(), item.unitPrice(), item.quantity(), item.quantity());
-                inventory.put(fresh.id(), fresh);
+            if (existing == null) { // sollte nicht passieren, da Validierung ja schon geprüft hat
+                getContext().getLog().error("Fridge '{}': inventory entry for {} missing during order completion — skipping", identifier, item.productId());
+                continue;
             }
+            Product updated = existing.addQuantity(item.quantity());
+            inventory.put(updated.id(), updated);
             currentItemCount += item.quantity();
             currentWeightKg += item.totalWeight();
         }

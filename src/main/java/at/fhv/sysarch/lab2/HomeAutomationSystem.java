@@ -3,10 +3,6 @@ package at.fhv.sysarch.lab2;
 
 import at.fhv.sysarch.lab2.homeautomation.HomeAutomationController;
 import org.apache.pekko.actor.typed.ActorSystem;
-import org.apache.pekko.stream.impl.fusing.Log;
-
-import java.io.IOException;
-import java.util.logging.Logger;
 
 public class HomeAutomationSystem {
 

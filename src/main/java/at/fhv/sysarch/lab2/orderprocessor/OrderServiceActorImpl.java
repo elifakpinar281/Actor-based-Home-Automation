@@ -6,6 +6,7 @@ import org.apache.pekko.actor.typed.ActorSystem;
 import org.apache.pekko.actor.typed.javadsl.AskPattern;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletionStage;
 
@@ -22,11 +23,14 @@ public class OrderServiceActorImpl implements OrderService {
 
     @Override
     public CompletionStage<OrderResponse> processOrder(OrderRequest request) {
-        List<ValidationActor.OrderItemData> items = request.getItemsList().stream()
-                .map(item -> new ValidationActor.OrderItemData(item.getProductId(), item.getQuantity(), item.getUnitPrice()))
-                .toList();
+        List<ValidationActor.OrderItemData> items = new ArrayList<>(request.getItemsList().size());
+        for (OrderItem item : request.getItemsList()) {
+            items.add(new ValidationActor.OrderItemData(item.getProductId(), item.getQuantity(), item.getUnitPrice()));
+        }
 
-        return AskPattern.<ValidationActor.Command, ValidationActor.ValidationResult>ask(validationActor, replyTo -> new ValidationActor.ValidateOrder(items, replyTo),
+        return AskPattern.<ValidationActor.Command, ValidationActor.ValidationResult>ask(
+                validationActor,
+                replyTo -> new ValidationActor.ValidateOrder(items, replyTo),
                 ASK_TIMEOUT, system.scheduler()
         ).thenApply(this::toGrpcResponse);
     }
@@ -40,9 +44,11 @@ public class OrderServiceActorImpl implements OrderService {
                     .build();
         }
 
-        double totalPrice = result.items().stream()
-                .mapToDouble(item -> item.quantity() * item.unitPrice())
-                .sum();
+        double rawTotal = 0.0;
+        for (ValidationActor.OrderItemData item : result.items()) {
+            rawTotal += item.quantity() * item.unitPrice();
+        }
+        double totalPrice = Math.round(rawTotal * 100.0) / 100.0;
 
         OrderReceipt.Builder receiptBuilder = OrderReceipt.newBuilder()
                 .setOrderId(result.orderId())
