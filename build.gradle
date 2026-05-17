@@ -83,10 +83,6 @@ test {
     useJUnitPlatform()
 }
 
-task runServer(type: JavaExec) {
-    classpath = sourceSets.main.runtimeClasspath
-    main = 'at.fhv.sysarch.lab2.homeautomation.grpcdemo.GreeterServer'
-}
 
 task runOrderProcessor(type: JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
