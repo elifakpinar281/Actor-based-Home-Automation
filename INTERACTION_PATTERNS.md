@@ -1,32 +1,31 @@
 # Interaction Patterns
+
 ---
 
 ## 1. Scheduling Messages to Self
-Periodisches Senden einer Message an sich selbst über einen Timer.
 
-**Wo verwendet:**
+Periodically sending a message to itself via a timer.
 
-- environment/TemperatureEnvironment: interner Temperatur-Simulator, der alle 5 s einen Tick an sich selbst sendet und seine simulierte Temperatur leicht verändert
-- environment/WeatherEnvironment: analog für Wettersimulation
+**Used in:**
 
-**Aufbau:**
+- environment/TemperatureEnvironment: internal temperature simulator that sends a tick to itself every 5 seconds and slightly adjusts its simulated temperature
+- environment/WeatherEnvironment: analogous for weather simulation
 
+**How it works:**
 
-Beim Empfang von Tick gibt der Actor einen kleinen random Delta-Wert zurück, addiert ihn auf die aktuelle
-Temperatur und pusht das Ergebnis als InternalTemperatureUpdate zum EnvironmentCoordinator.
+On receiving a Tick, the actor applies a small random delta to the current temperature and pushes the result as an InternalTemperatureUpdate to the EnvironmentCoordinator.
 
-Die interne Simulation Werte sollen über die Zeit leicht verändern. Es gibt kein eigner Thread. Timer wird beim Stop automatisch gecancelt.
+The internal simulation values change gradually over time. No dedicated thread is involved. The timer is automatically cancelled on stop.
 
 ---
 
 ## 2. Fire and Forget (Tell)
-Eine Message wird gesendet, ohne dass eine Antwort erwartet oder verarbeitet wird.
 
+A message is sent without expecting or handling a reply.
 
+**Used in:**
 
-**Wo verwendet:** 
-Wird sehr häufig verwendet. Im Grunde überall, wo es keine Antwort braucht.
-Einpaar Beispiele:
+This pattern is used very frequently — essentially everywhere a response is not needed. Some examples:
 
 1. EnvironmentCoordinator -> TemperatureSensor: TemperatureMeasured
 2. EnvironmentCoordinator -> WeatherSensor: WeatherMeasured
@@ -34,136 +33,116 @@ Einpaar Beispiele:
 4. WeatherSensor -> Blinds: WeatherUpdate
 5. MediaStation -> Blinds: MovieStatusChanged
 6. MqttEnvironmentClient -> EnvironmentCoordinator: MqttTemperatureUpdate / MqttWeatherUpdate
-sehr häufig – im Grunde überall, wo es keine Antwort braucht. Beispiele:
 
-**Aufbau (Beispiel TemperatureSensor -> AirCondition):**
+**Why it fits:**
 
-
-Sensoren broadcasten Messwerte an alle interessierten Aktuatoren. Es gibt keinen sinnvolle Antwort.
-"AC hat das Update gelesen"-Acknowledgement ergibt fachlich kein Sinn.
-Auch zwischen Coordinator und Sensoren passt Fire-and-Forget.
+Sensors broadcast measurements to all interested actuators. There is no meaningful reply — an "AC has received the update" acknowledgement makes no domain sense. Fire-and-forget also fits the coordinator-to-sensor direction for the same reason.
 
 ---
 
-## 3. Request-Response with Ask (between Actor and outside/HTTP)
+## 3. Request-Response with Ask (between Actor and HTTP)
 
-Ein Aufrufer schickt eine Anfrage und wartet (mit Timeout) auf genau eine Antwort. Der ActorRef der Antwort steht direkt im Request.
+A caller sends a request and waits (with a timeout) for exactly one reply. The reply ActorRef is included directly in the request.
 
-**Wo verwendet:** 
-Überall, wo die HTTP-Routen Daten aus einem Actor brauchen, um eine HTTP-Antwort zu formen.
+**Used in:**
 
-**Aufbau (Beispiel /status aggregiert 4 Aktoren parallel):
+Everywhere the HTTP routes need data from an actor to form an HTTP response.
 
+**Example (/status aggregates 4 actors in parallel):**
 
-
-
-Die Aktoren bekommen einen replyTo: ActorRef<...Response> im Request mit. Beispiel AirCondition:
-
-
-HTTP ist synchron-blockierend (Client wartet auf Response). Um aus Aktoren eine HTTP-Antwort zu formen, brauchen wir genau ein Future pro Aktor-Aufruf, mit Timeout.
-Ask hat einen Timeout-Mechanismus und legt intern einen kurzlebigen Adapter-Actor an. Für Status-Queries vom HTTP-Layer ist das passend.
+Actors receive a replyTo: ActorRef<...Response> in the request. HTTP is synchronous — the client waits for a response. To form an HTTP response from actor data, exactly one Future per actor call is needed, with a timeout. Ask provides a timeout mechanism and internally creates a short-lived adapter actor. This is the right fit for status queries from the HTTP layer.
 
 ---
 
 ## 4. Send Future Result to Self (pipeToSelf)
-Ein Actor ruft eine API auf, die ein `CompletionStage` zurückgibt, und will mit dem Ergebnis als interne Message weiterarbeiten – im Aktor-Kontext, nicht im Future-Callback-Thread.
 
-**Wo verwendet:** 
-devices/OrderProcessor.java. Der Per-Session-Child ruft den gRPC-Client und will die Antwort als Pekko-Message zurückbekommen, damit er weiter im Aktor-Lifecycle bleibt.
+An actor calls an API that returns a `CompletionStage` and wants to continue working with the result as an internal message — inside the actor context, not inside a future callback thread.
 
-**Aufbau:**
+**Used in:**
 
+devices/OrderProcessor.java. The per-session child calls the gRPC client and wants the response back as a Pekko message so it stays within the actor lifecycle.
 
-pipeToSelf ist die Future-zu-Self-Message-Adaption. Das CompletionStage<OrderResponse> vom gRPC-Client wird in eine interne Command-Variante (GrpcResponse oder GrpcFailure) gewickelt
-und an self gesendet. Damit bleibt der Actor stateless gegenüber dem Future-Thread, alle weiteren Schritte (gRPC-Success -> Receipt erzeugen -> an Fridge melden) laufen sauber in der Mailbox.
+**How it works:**
 
-Den gRPC-Client direkt zu blockieren oder den Erfolg-Branch im Future-Callback zu behandeln würde das Aktor-Modell brechen (Thread-Safety, kein Zugriff auf internen Aktor-State erlaubt).
+`pipeToSelf` is the future-to-self-message adapter. The `CompletionStage<OrderResponse>` from the gRPC client is wrapped into an internal command variant (GrpcResponse or GrpcFailure) and sent to self. This keeps the actor stateless with respect to the future thread — all subsequent steps (gRPC success → create receipt → notify Fridge) run cleanly through the mailbox.
+
+Blocking the gRPC client directly or handling the success branch inside a future callback would break the actor model (thread safety, no access to internal actor state allowed).
 
 ---
 
-## 5. Ignoring Replies (Tell ohne replyTo)
-Wie Fire-and-Forget, aber bewusst auch im Kontext einer Anfrage, bei der eine Antwort theoretisch möglich, aber nicht erwünscht ist.
+## 5. Ignoring Replies (Tell without replyTo)
 
-**Wo verwendet:**
+Like fire-and-forget, but intentionally used in contexts where a reply would be technically possible but is not desired.
 
-- Fridge.ConsumeProduct: der User klickt „Consume", die HTTP-Route sendet tell(...) an den Fridge und antwortet sofort mit 202 Accepted. Keine replyTo im Command:
+**Used in:**
 
+- Fridge.ConsumeProduct: the user clicks "Consume", the HTTP route sends a tell(...) to the Fridge and immediately responds with 202 Accepted. No replyTo in the command.
+- Fridge.OrderProducts.autoOrder(...): the Fridge sends itself an order when a product drops to zero. Here replyTo is modelled as `Optional<ActorRef<...>>` and is empty in the auto-order case.
 
-- Fridge.OrderProducts.autoOrder(...): Der Fridge sendet sich selbst eine Bestellung, wenn ein Produkt auf 0 fällt. Hier ist die replyTo als Optional<ActorRef<...>> modelliert und im
-  Auto-Order-Fall leer:
+In the response handler, the optional replyTo is handled with `ifPresent(...)`. If absent, no reply is sent.
 
-
-
-Im Response-Handler wird die optionale replyTo mit ifPresent(...) behandelt. Fehlt sie, wird nicht geantwortet.
-
-„Consume" ist eine reine Befehlsaktion ohne sinnvollen Rückgabewert. Die Aufgabe nennt
-Der zweite Anwendungsfall (Auto-Order) zeigt eine  Wiederverwendung des gleichen Commands mit und ohne replyTo (über Optional).
+"Consume" is a pure command action with no meaningful return value. The auto-order case demonstrates reuse of the same command with and without replyTo via Optional.
 
 ---
 
 ## 6. Per-Session Child Actor
-Ein Aktor spawnt für jeden Request einen kurzlebigen Child-Actor, der den State des Requests isoliert hält und nach Abschluss stirbt.
 
+An actor spawns a short-lived child actor for each request. The child isolates the request's state and stops itself after completion.
 
-**Wo verwendet:** 
-Fridge.onOrderProducts: pro eingehender Bestellung wird ein eigener OrderProcessor als anonymes Child gespawnt.
+**Used in:**
 
-**Aufbau (Fridge-Seite):**
+Fridge.onOrderProducts: for each incoming order, a dedicated OrderProcessor is spawned as an anonymous child.
 
+**Fridge side:** spawns a new child per order.
 
-**Aufbau (Child-Seite – stoppt sich selbst nach Antwort):**
+**Child side:** stops itself after sending the reply (`Behaviors.stopped()`).
 
+**Why it fits:**
 
+- Required by the assignment
+- Each order has its own state (which order, who to reply to). Keeping this in the Fridge state would require a `Map<OrderId, replyTo>` that grows with every order and must be cleaned up explicitly. The per-session child encapsulates this state entirely.
+- gRPC is asynchronous. The child can wait for the gRPC response without blocking the Fridge in the meantime. Multiple parallel orders work naturally with this pattern.
+- On successful or failed completion, the child returns `Behaviors.stopped()` and cleans itself up. No memory leak.
 
-**Warum hier passend:**
-
-- Wird in der Aufgabe verlangt
-- Jede Bestellung hat ihren eigenen Zustand (welche Order, an wen antworten). Den im Fridge-State zu halten würde eine Map<OrderId, replyTo> erfordern, der State würde mit jeder Order wachsen
-  und müsste explizit angepasst werden. Der Per-Session-Child kapselt diesen State vollständig.
-- gRPC ist asynchron. Der Child kann auf die gRPC-Antwort warten, ohne dass der Fridge währenddessen blockiert wird. Mehrere parallele Bestellungen funktionieren mit dem Pattern natürlich.
-- Beim erfolgreichen oder fehlgeschlagenen Abschluss returnt der Child Behaviors.stopped() und räumt sich selbst weg. Kein Memory-Leak.
-
-Der gRPC-Client wird nicht pro Session erstellt, sondern einmal im HomeAutomationController aufgemacht und an alle Per-Session-Children durchgereicht. 
-Ein neuer gRPC-Channel pro Order wäre für die Aufgabe verschwenderisch.
+The gRPC client is not created per session — it is opened once in HomeAutomationController and passed down to all per-session children. A new gRPC channel per order would be wasteful.
 
 ---
 
 ## 7. Receptionist (Service Discovery)
 
-Aktoren registrieren sich unter Service-Keys. Andere Aktoren abonnieren diese Keys und bekommen automatisch Updates, wenn Aktoren hinzukommen oder verschwinden.
+Actors register under service keys. 
+Other actors subscribe to these keys and automatically receive updates when actors are added or removed.
 
-**Wo verwendet:** 
-Für jede inter-Aktor-Beziehung im HomeAutomationSystem, mit Ausnahme der Per-Session-Children des Fridge. 
+**Used in:**
 
-- `EnvironmentCoordinator` abonniert `TemperatureSensor.SERVICE_KEY` und `WeatherSensor.SERVICE_KEY`
-- `TemperatureSensor` abonniert `AirCondition.SERVICE_KEY`
-- `WeatherSensor` abonniert `Blinds.SERVICE_KEY`
-- `MediaStation` abonniert `Blinds.SERVICE_KEY`
+For every inter-actor relationship in the HomeAutomationSystem, except the per-session children of the Fridge.
 
-**Aufbau (Beispiel WeatherSensor):**
+- `EnvironmentCoordinator` subscribes to `TemperatureSensor.SERVICE_KEY` and `WeatherSensor.SERVICE_KEY`
+- `TemperatureSensor` subscribes to `AirCondition.SERVICE_KEY`
+- `WeatherSensor` subscribes to `Blinds.SERVICE_KEY`
+- `MediaStation` subscribes to `Blinds.SERVICE_KEY`
 
+**Concrete advantages over direct reference injection via constructor:**
 
+- No spawn-order dependency (actor A can exist before actor B without needing an explicit ref to B).
+- A second AC or Blinds actor could be added at runtime without changing any sensor code.
+- In unit tests, probes can be registered under the same key.
 
-Auf der Gegenseite (z.B. `HomeAutomationController`):
-
-
-
-
-Konkrete Vorteile gegenüber direkter Referenz-Injektion via Constructor:
-    - Keine Reihenfolge-Abhängigkeit beim Spawn (Actor A kann vor Actor B existieren, ohne dass A explizit eine Ref auf B braucht).
-    - Ein zweiter AC oder zweiter Blinds-Actor könnte zur Laufzeit dazukommen, ohne dass Sensoren-Code geändert werden müsste.
-    - In Unit-Tests können Probes unter dem gleichen Key registriert werden.
-
-Pekko erlaubt nur einen messageAdapter pro Message-Klasse pro Actor. 
-Wenn man wie der EnvironmentCoordinator Listings für mehrere Service-Keys braucht, muss ein einziger Adapter verwendet werden, der intern per
-listing.isForKey(...) dispatcht. Eine zweite Registrierung des Adapters für dieselbe Klasse ersetzt die erste, was einen Bug erzeugen würde (Listings für den ersten Key kämen nie mehr an).
+Pekko allows only one messageAdapter per message class per actor. 
+When an actor like EnvironmentCoordinator needs listings for multiple service keys, 
+a single adapter must be used that internally dispatches via `listing.isForKey(...)`. 
+Registering a second adapter for the same class replaces the first, which would cause a bug - 
+listings for the first key would never arrive.
 
 ---
 
-## 8. gRPC-Bridge zwischen zwei Actor-Systemen
-Zwei eigenständige ActorSystems kommunizieren über ein streng typisiertes Request-Response-Protokoll.
+## 8. gRPC Bridge between Two Actor Systems
 
-Brücke zwischen HomeAutomationSystem (Fridge / Per-Session-OrderProcessor) und OrderProcessorSystem (OrderServiceActorImpl).
+Two independent ActorSystems communicate via a strictly typed request-response protocol.
+
+Bridge between HomeAutomationSystem (Fridge / per-session OrderProcessor) and 
+OrderProcessorSystem (OrderServiceActorImpl).
+
 **Schema:** `src/main/proto/orderprocessing.proto`
 
 ```protobuf
@@ -172,18 +151,18 @@ service OrderService {
 }
 ```
 
-**Client-Seite (HomeAutomationSystem):**
-Client wird einmalig im Controller erzeugt.
+**Client side (HomeAutomationSystem):**
 
+The client is created once in the controller. The per-session OrderProcessor calls 
+grpcClient.processOrder(...) and adapts the future via pipeToSelf (see section 4).
 
-- Per-Session-OrderProcessor ruft grpcClient.processOrder(...) und adaptiert das Future per pipeToSelf (siehe 4.).
+**Server side (OrderProcessorSystem):**
 
-**Server-Seite (OrderProcessorSystem):** Der OrderServiceActorImpl implementiert das generierte OrderService-Interface. Eingehende gRPC-Calls werden per AskPattern.ask an den ValidationActor weitergegeben:
+The OrderServiceActorImpl implements the generated OrderService interface. 
+Incoming gRPC calls are forwarded to the ValidationActor via AskPattern.ask.
+This cleanly connects the "outside" of the actor world (gRPC endpoint) with the "inside" (Validation → Persistence actor pipeline).
 
-Damit ist die Verbindungen außerhalb des Aktor-Models verbunden mit der "innerhalb" (Validation -> Persistence Aktor-Pipeline).
-Damit ist die Brücke „außerhalb" der Aktor-Welt (gRPC-Endpoint) cleanly verbunden mit der
-„innerhalb" (Validation → Persistence Aktor-Pipeline).
+**Why it fits:**
 
-
-- Pekko gRPC generiert aus dem .proto typsichere Server- und Client-Stubs, sodass wir keine manuellen Serialisierungs-/Deserialisierungs-Schichten warten müssen.
-- Die zwei Systeme sind durch das Proto-Schema verbunden. Sie können unabhängig voneinander gestartet, deployed und versioniert werden.
+- Pekko gRPC generates type-safe server and client stubs from the .proto file, so no manual serialization/deserialization layers need to be maintained.
+- The two systems are coupled only through the proto schema. They can be started, deployed, and versioned independently.
