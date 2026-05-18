@@ -1,18 +1,23 @@
 # Home Automation System – Lab 02 (Actors)
+Elif Akpinar & Helena Aldaloul
 
 The task was to implement a smart home system using Apache Pekko, consisting of two separate actor systems communicating via gRPC:
 
-- **HomeAutomationSystem** – sensors, actuators, environment simulation, REST/HTTP API
-- **OrderProcessorSystem** – external ordering system with H2 persistence, accessible via gRPC
+- **HomeAutomationSystem** - sensors, actuators, environment simulation, REST/HTTP API
+- **OrderProcessorSystem** - external ordering system with H2 persistence, accessible via gRPC
 
+The HomeAutomationSystem simulates temperature and weather, controls AC, blinds and media station and manages a fridge with ordering capabilities. 
+The OrderProcessorSystem handles incoming orders, simulates processing time and persists order history in H2.
+
+Prerequisited: Java 17+, Gradle, Node.js 18+ 
 ---
 
 ## Starting the System
 
 The Java systems must be started in the following order:
 
-````bash
-# Start the FHV VPN for the MQTT source (optional, only required for EXTERNAL_MQTT mode).
+```bash
+# Optional: start the FHV VPN for the MQTT source (only required for EXTERNAL_MQTT mode).
 
 # Start the external Order Processor system (gRPC server on 127.0.0.1:50051):
 ./gradlew runOrderProcessor
@@ -22,10 +27,10 @@ The Java systems must be started in the following order:
 
 # Start the frontend (Next.js on localhost:3000):
 cd frontend && npm install && npm run dev
-````
+```
 
-
-The MQTT connection to the external weather simulation is attempted automatically when the HomeAutomationSystem starts. If it fails, the system continues to run. The EXTERNAL_MQTT mode will simply not deliver any values in that case.
+The MQTT connection to the external weather simulation is attempted automatically when the HomeAutomationSystem starts. 
+If it fails, the system continues to run. The EXTERNAL_MQTT mode will simply not deliver any values in that case.
 
 ### Access Points
 
@@ -35,10 +40,10 @@ The MQTT connection to the external weather simulation is attempted automaticall
 
 ## Frontend
 
-The frontend exposes all required actions:
+The frontend has all required actions:
 
-- Live status of temperature, weather, AC, blinds, and media station states
-- Floorplan with live status of AC, blinds, and media station
+- Live status of temperature, weather, AC, blinds and media station states
+- Floorplan with live status of AC, blinds and media station
 - Controls: temperature via slider, weather selection, simulation mode switching
 - Media Station card: start/stop movies
 - Fridge Management: view and consume current products, place orders, view order history
@@ -49,102 +54,155 @@ The frontend exposes all required actions:
 
 ### Actors – HomeAutomationSystem
 
+
 ### Class Model
+
 
 ---
 
-## Actor Discovery: Receptionist Everywhere, Except Per-Session Children
+## Actor Discovery
 
-Actor discovery uses the Receptionist as recommended in the assignment, 
-which keeps actors decoupled from one another. 
-The one exception is the Fridge, which spawns its own child actors directly.
+Actor discovery uses the Receptionist as recommended in the assignment, which keeps actors decoupled from one another. 
+The only exception is the Fridge, which spawns its own child actors directly.
 
 Discovery relationships:
 
-1. EnvironmentCoordinator → TemperatureSensor: Receptionist
-2. EnvironmentCoordinator → WeatherSensor: Receptionist
-3. TemperatureSensor → AirCondition: Receptionist
-4. WeatherSensor → Blinds: Receptionist
-5. MediaStation → Blinds: Receptionist
-6. Fridge → OrderProcessor: child spawn
-7. Routes → all actors: direct reference (bind)
+1. EnvironmentCoordinator -> TemperatureSensor: Receptionist
+2. EnvironmentCoordinator -> WeatherSensor: Receptionist
+3. TemperatureSensor -> AirCondition: Receptionist
+4. WeatherSensor -> Blinds: Receptionist
+5. MediaStation -> Blinds: Receptionist
+6. Fridge -> OrderProcessor: child spawn
+7. Routes -> all actors: direct reference (bind)
 
-The HTTP routes hold direct references to actors because they are not actors themselves - they are the boundary to the outside world.
+The HTTP routes hold direct references to actors because they are not actors themselves. They are the boundary to the "outside".
 
 ### Two Separate Actor Systems via gRPC
 
 The ordering system lives in a separate actor system. 
-There are two guardian-based ActorSystems (HomeAutomationController and OrderProcessorGuardian), 
-each running in its own JVM process and communicating via gRPC. The Protobuf schema is located at src/main/proto/orderprocessing.proto.
+There are two guardian-based ActorSystems (HomeAutomationController and OrderProcessorGuardian). Each runs in its own JVM process and communicate via gRPC. 
+The Protobuf schema is located at `src/main/proto/orderprocessing.proto`.
 
-The OrderServiceClient is created once in HomeAutomationController and passed to the Fridge, 
-which forwards it to its per-session child actors. A new gRPC channel is not created per order.
+The `OrderServiceClient` is created once in HomeAutomationController and passed to the Fridge, which forwards it to its per-session child actors. 
+A new gRPC channel is not created per order.
 
 ---
+
 
 ## Design Decisions
 
 ### 1. EnvironmentCoordinator – Blackboard Pattern
 
-The EnvironmentCoordinator handles four distinct update messages (InternalTemperatureUpdate, MqttTemperatureUpdate, SetFixedTemperature, and mode switch). 
-Values are only propagated to sensors when the active mode matches the source. 
-Each source may fire at any time, but the coordinator decides whether the update passes through.
+The EnvironmentCoordinator is the single point that handles all environment updates: ticks from the internal simulator, values from MQTT and manual overrides from the user (`InternalTemperatureUpdate`, `MqttTemperatureUpdate`, `SetFixedTemperature`, `SetFixedWeather`, `SetMode`).
+Updates are only forwarded to the sensors if the current mode matches the source of the update. 
+So an MQTT update is dropped while the system is in INTERNAL mode, and vice versa. This way the sources don't need to know anything about each other.
 
-On a mode switch, no new value is pushed immediately. The next tick handles propagation - pushing immediately would mix the mode switch with a temperature update.
+What happens when the mode is switched:
+
+- Switching to INTERNAL or EXTERNAL_MQTT does not push a new value right away. The next tick from that source will deliver one. Pushing immediately would just send out an old value from before the switch.
+- Switching to FIXED pushes the last fixed value right away, because there is no tick that would otherwise trigger it.
+- DISABLED ignores every incoming update. The last known values are still returned for /status, but the sensors no longer get new data.
+- SetFixedTemperature and SetFixedWeather automatically switch the mode to FIXED if it isn't already. If the user sets a value, they clearly want that value to take effect.
+
 
 ### 2. EnvironmentSnapshot as a Status Cache
 
-Instead of querying all actors individually on every /status call, the EnvironmentCoordinator keeps 
-the last pushed value in an EnvironmentSnapshot and returns it via ask. 
-This avoids inconsistent snapshots and reduces the number of hops required.
+Every `/status` call could ask all sensors and actuators individually. We didn't do that. 
+Instead, the EnvironmentCoordinator keeps the last pushed values in an EnvironmentSnapshot and returns them via ask. 
+One actor call per /status instead of four, and the snapshot is always consistent (no risk of getting the temperature from before an update and the weather from after).
+
 
 ### 3. Single MessageAdapter per Class
 
-Pekko allows only one messageAdapter per message class per actor. Registering a second adapter for the 
-same class replaces the first. The EnvironmentCoordinator needs to process Receptionist.Listing for two service keys 
-(TemperatureSensor and WeatherSensor). The solution is a single adapter that internally inspects listing.isForKey() 
-to determine which command variant to produce.
+Pekko only allows one `messageAdapter` per message class per actor. 
+If you register a second one for the same class, it replaces the first. 
+That's a problem in EnvironmentCoordinator, which needs to receive `Receptionist.Listing` messages for two service keys (TemperatureSensor and WeatherSensor).
+
+The fix is one shared adapter that checks `listing.isForKey(...)` and produces the right command for each key. 
+Unrelated listings are turned into an `IgnoredListing`. 
+MediaStation only subscribes to one key (Blinds), but uses the same defensive pattern anyway in case more subscriptions are added later.
+
 
 ### 4. Blocking-IO Dispatcher for PersistenceActor
 
-JDBC calls block the executing thread. If the PersistenceActor ran on the default dispatcher, 
-its synchronous DB inserts would occupy threads from the shared pool and slow down other actors. 
-It is therefore spawned on a dedicated blocking-io-dispatcher (see src/main/resources/orderprocessor.conf). 
-Four threads in the pool are sufficient for this environment.
+JDBC calls block the thread they run on. 
+If the PersistenceActor used the default dispatcher, its DB inserts would block threads that are shared with all other actors, slowing the whole system down.
+
+So the PersistenceActor runs on its own `blocking-io-dispatcher` (configured in `src/main/resources/orderprocessor.conf`). 
+It has its own thread pool of four threads. Any blocking happens there and stays there.
+
 
 ### 5. JDBC Instead of EventSourcedBehavior
 
-Plain JDBC is used rather than an ORM. Event sourcing would conceptually fit since orders are immutable 
-and never modified, but was considered overkill for this scope.
+Plain JDBC, no ORM. 
+Event sourcing would have fit conceptually (orders never change after creation), but it would have been overkill for what this lab needs in our opinion.
+H2 runs in AUTO_SERVER mode, so you can connect a second tool (e.g. a DB browser) to the running DB and inspect it.
 
-H2 runs in AUTO_SERVER mode so the database can also be inspected externally.
 
 ### 6. Per-Session OrderProcessor (Child) Instead of a Shared Worker
 
-For each order, the Fridge spawns a new OrderProcessor child that handles exactly one 
-ProcessOrder message and then stops itself. This gives every order its own lifecycle with no shared state. 
-This is the Per-Session Child pattern.
+For every order, the Fridge spawns a fresh OrderProcessor child. 
+That child handles exactly one ProcessOrder message and then stops itself. 
+Every order gets its own actor, its own state and its own lifecycle. Nothing is shared between orders. This is the Per-Session Child pattern.
+
 
 ### 7. Auto-Reorder on Empty Stock
 
-When a product's quantity in the Fridge drops to zero, the Fridge triggers an automatic reorder using 
-the same mechanism as a user-initiated order, but without a replyTo reference. 
-If the auto-reorder would exceed capacity limits, it is rejected with a warning log and the product 
-remains out of stock.
+When a product hits zero in the Fridge, the Fridge orders it again automatically. 
+It uses the same OrderProducts message as a user-initiated order, just without a `replyTo` (no one is waiting for a response).
+
+The amount that gets reordered is the product's initial quantity. So each product fills back up to whatever it started with, not a fixed default.
+If the auto-reorder wouldn't fit (item count or weight), it's skipped with a warning log and the product stays empty. 
+The Fridge can never end up over capacity from an auto-reorder.
+
 
 ### 8. Reorder in the Frontend
 
-When the last unit of a product is consumed, the product row would normally disappear from the UI (due to a quantity > 0 filter) until the auto-reorder 
-completes a few seconds later. Instead, such products are shown as pending reorder in the frontend with a "Reordering..." pill. Once the backend reports a quantity greater than zero again, the marker is automatically cleared via the pendingReorders.has(id) && quantity === 0 condition.
+Normally, when a product hits zero it would just disappear from the UI (because we filter on quantity > 0) and only reappear a few seconds 
+later when the auto-reorder finishes. 
+That would be confusing when the product looks gone.
 
-### 9. Shutdown and Shutdown Hook
+Instead, the frontend keeps such products visible and shows a "Reordering..." pill on them. 
+As soon as the backend reports a quantity > 0 again, the pill disappears. The check is just `pendingReorders.has(id) && quantity === 0`.
 
-Both actor systems register a JVM shutdown hook that calls system.terminate() and waits up to 5 seconds 
-for a clean shutdown. This ensures the gRPC server, HTTP binding, and MQTT connection are closed 
-gracefully on Ctrl+C rather than being abruptly terminated.
 
----
+### 9. Records for Messages and DTOs
 
+Every actor command, every response and every HTTP DTO is a Java record. We used records instead of plain classes.
+
+- Actor messages have to be immutable. Otherwise the share-nothing model breaks. Records make every field final automatically and there are no setters.
+- Records generate equals, hashCode, and toString for free. This makes a huge difference in logging.
+- HTTP DTOs serialize to JSON cleanly with Jackson, because records have a constructor and accessor methods that Jackson can use directly.
+- Messages where the reply is sometimes wanted and sometimes not (like `Fridge.OrderProducts`) use `Optional<ActorRef<...>>` for the replyTo, plus two static factory methods: `fromUser(...)` (with reply) and `autoOrder(...)` (without). Both go through the same handler. We avoided two separate message types just to keep the code simple.
+
+
+### 10. Exception Handling – Domain Hierarchy + Global Handler
+All custom exceptions extend DomainException, which is a RuntimeException with an ErrorCode field.
+Each concrete exception takes structured arguments and builds its own message. 
+
+For example, `new InsufficientSpaceException(60, 80, 25)` produces "Insufficient space in fridge. Current: 60, Max: 80, Attempted addition: 25". 
+The call site doesn't have to format anything. This keeps Fridge.validateAndBuildLineItems clean, and every occurrence of the same error reads the same way.
+
+ErrorCode is an enum that categorizes the error (e.g. `FRIDGE_INSUFFICIENT_SPACE`). 
+
+GlobalExceptionHandler is registered once with `handleExceptions(...)` in `HttpServer.createRoute()`. It maps exceptions to HTTP status codes using Pekko's `ExceptionHandler.newBuilder().match(...)`:
+For every .match, the handler logs errorCode, message -> HTTP code and returns the same ErrorResponse JSON shape.
+To add a new domain exception, you add one .match(...) line in the handler
+
+Why not checked exceptions?
+Pekko's actor handlers and the HTTP route directives can't easily declare throws clauses, so checked exceptions would force a try/catch around almost every line. 
+Unchecked exceptions keep the route code readable. 
+The trade-off is that you have to remember to handle domain errors in the global handler.
+
+
+### 11. Shutdown and Shutdown Hook
+
+Both actor systems register a JVM shutdown hook (so Strg+C does the right thing). Both hooks call `system.terminate()`. 
+The HomeAutomation hook additionally waits up to 5 seconds via `getWhenTerminated().get(5, TimeUnit.SECONDS)`, which gives the gRPC client, 
+HTTP binding and MQTT connection time to shut down cleanly.
+The OrderProcessor hook just calls `terminate()` without waiting. 
+
+___
 ## Further Documentation
 
-[INTERACTION_PATTERNS.md](INTERACTION_PATTERNS.md)
+[INTERACTION_PATTERNS.md](INTERACTION_PATTERNS.md) – detailed walkthrough of the seven interaction patterns used in the system.
