@@ -1,6 +1,5 @@
 # Home Automation System – Lab 02 (Actors)
-Elif Akpinar & Helena Aldaloul
-The assignment PDF: [02-Actors.pdf](documentation_assests/02-Actors.pdf)
+Elif Akpinar & Helena Aldaloul - The assignment PDF: [02-Actors.pdf](documentation_assests/02-Actors.pdf)
 
 
 The task was to implement a smart home system using Apache Pekko, consisting of two separate actor systems communicating via gRPC:
