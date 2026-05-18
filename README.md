@@ -11,6 +11,7 @@ The HomeAutomationSystem simulates temperature and weather, controls AC, blinds 
 The OrderProcessorSystem handles incoming orders, simulates processing time and persists order history in H2.
 
 Prerequisited: Java 17+, Gradle, Node.js 18+ 
+
 ---
 
 ## Starting the System
