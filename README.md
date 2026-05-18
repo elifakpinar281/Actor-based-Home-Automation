@@ -1,4 +1,4 @@
-# Home Automation System – Lab 02 (Actors)
+# Home Automation System - Lab 02 (Actors)
 Elif Akpinar & Helena Aldaloul - The assignment PDF: [02-Actors.pdf](documentation_assests/02-Actors.pdf)
 
 
@@ -207,4 +207,4 @@ The OrderProcessor hook just calls `terminate()` without waiting.
 ___
 ## Further Documentation
 
-[INTERACTION_PATTERNS.md](INTERACTION_PATTERNS.md) – detailed walkthrough of the seven interaction patterns used in the system.
+[INTERACTION_PATTERNS.md](INTERACTION_PATTERNS.md) - walkthrough of the interaction patterns used in the system.
