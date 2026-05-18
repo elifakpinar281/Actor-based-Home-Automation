@@ -11,7 +11,7 @@ An actor uses a timer to send messages to itself periodically.
 - `environment/WeatherEnvironment`: same idea, for the weather condition.
 
 
-<img src="documentation_photos/Scheduling_Messages_To_Self.png" alt="Scheduling_Messages_To_Self" width="600"/>
+<img src="documentation_assests/Scheduling_Messages_To_Self.png" alt="Scheduling_Messages_To_Self" width="600"/>
 
 
 
@@ -42,7 +42,7 @@ This is the most common pattern in the system. It is used everywhere where a rep
 6. MqttEnvironmentClient -> EnvironmentCoordinator: MqttTemperatureUpdate / MqttWeatherUpdate
 
 
-<img src="documentation_photos/Fire_and_Forget.png" alt="Fire_and_Forget" width="800"/>
+<img src="documentation_assests/Fire_and_Forget.png" alt="Fire_and_Forget" width="800"/>
 
 
 
@@ -59,7 +59,7 @@ A caller sends a request and waits (with a timeout) for exactly one reply. The r
 
 Everywhere the HTTP routes need data from an actor to put into an HTTP response.
 
-<img src="documentation_photos/Request_Response_with_ask.png" alt="Request_Response_with_ask" width="500"/>
+<img src="documentation_assests/Request_Response_with_ask.png" alt="Request_Response_with_ask" width="500"/>
 
 
 Example: /status aggregates four actors in parallel.
@@ -101,7 +101,7 @@ Like fire-and-forget, but used in places where a reply could technically exist. 
 - `Fridge.ConsumeProduct`: the user clicks "Consume", the HTTP route does a tell(...) to the Fridge and immediately answers the HTTP request with 202 Accepted. There's no replyTo on the command.
 - `Fridge.OrderProducts.autoOrder(...)`: when a product hits zero, the Fridge sends itself an order. The replyTo field is `Optional<ActorRef<...>>` and is empty in this case (see Design Decision 9 in the README).
 
-<img src="documentation_photos/Ignoring_Replies.png" alt="Ignoring_Replies" width="600"/>
+<img src="documentation_assests/Ignoring_Replies.png" alt="Ignoring_Replies" width="600"/>
 
 
 
@@ -118,7 +118,7 @@ An actor spawns a short-lived child for each request. The child holds the state 
 **Used in:**
 
 
-<img src="documentation_photos/Per_Session_Child_Actor.png" alt="Per_Session_Child_Actor" width="600"/>
+<img src="documentation_assests/Per_Session_Child_Actor.png" alt="Per_Session_Child_Actor" width="600"/>
 
 
 `Fridge.onOrderProducts`: for every incoming order, a new OrderProcessor is spawned as an anonymous child.
