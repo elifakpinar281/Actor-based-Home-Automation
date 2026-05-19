@@ -1,4 +1,4 @@
-package at.fhv.sysarch.lab2.homeautomation.shared.exceptions;
+package at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions;
 
 public class ProductNotAvailableException extends FridgeException {
     public ProductNotAvailableException(String productName, int requested, int available) {

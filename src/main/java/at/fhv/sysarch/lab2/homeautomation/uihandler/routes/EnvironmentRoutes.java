@@ -3,7 +3,7 @@ package at.fhv.sysarch.lab2.homeautomation.uihandler.routes;
 import at.fhv.sysarch.lab2.homeautomation.devices.AirCondition;
 import at.fhv.sysarch.lab2.homeautomation.environment.EnvironmentCoordinator;
 import at.fhv.sysarch.lab2.homeautomation.environment.SimulationMode;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidTemperatureException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidTemperatureException;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.environment.Temperature;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.environment.WeatherCondition;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.SuccessResponse;

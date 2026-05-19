@@ -8,7 +8,7 @@ import at.fhv.sysarch.lab2.homeautomation.environment.TemperatureEnvironment;
 import at.fhv.sysarch.lab2.homeautomation.environment.MqttEnvironmentClient;
 import at.fhv.sysarch.lab2.homeautomation.environment.WeatherEnvironment;
 import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.OrderServiceClient;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttConnectionException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.MqttConnectionException;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.HttpServer;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;

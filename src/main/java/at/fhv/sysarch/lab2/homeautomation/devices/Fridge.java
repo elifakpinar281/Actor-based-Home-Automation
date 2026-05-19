@@ -1,7 +1,7 @@
 package at.fhv.sysarch.lab2.homeautomation.devices;
 
 import at.fhv.sysarch.lab2.homeautomation.grpc.orderprocessing.OrderServiceClient;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.*;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.*;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.order.*;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.apache.pekko.actor.typed.Behavior;

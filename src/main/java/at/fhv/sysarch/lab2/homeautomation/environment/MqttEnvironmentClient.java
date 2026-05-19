@@ -1,8 +1,8 @@
 package at.fhv.sysarch.lab2.homeautomation.environment;
 
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidWeatherConditionException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttConnectionException;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.MqttMessageParseException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidWeatherConditionException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.MqttConnectionException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.MqttMessageParseException;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.environment.WeatherCondition;
 import org.apache.pekko.actor.typed.ActorRef;
 import org.eclipse.paho.client.mqttv3.*;

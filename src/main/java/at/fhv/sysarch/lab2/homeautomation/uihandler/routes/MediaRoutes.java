@@ -1,7 +1,7 @@
 package at.fhv.sysarch.lab2.homeautomation.uihandler.routes;
 
 import at.fhv.sysarch.lab2.homeautomation.devices.MediaStation;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidRequestException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidRequestException;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.MediaStatusResponse;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.SuccessResponse;
 import org.apache.pekko.actor.typed.ActorRef;

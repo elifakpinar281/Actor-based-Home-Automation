@@ -1,6 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.shared.model.environment;
 
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidWeatherConditionException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidWeatherConditionException;
 
 public enum WeatherCondition {
     SUNNY,

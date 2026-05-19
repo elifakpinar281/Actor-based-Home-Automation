@@ -5,7 +5,7 @@ import at.fhv.sysarch.lab2.homeautomation.shared.model.order.Order;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.order.OrderLineItem;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.order.Product;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.order.Receipt;
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidOrderException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidOrderException;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.CapacityDto;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.OrderDto;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.OrderHistoryDto;

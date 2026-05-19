@@ -1,6 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.shared.model.order;
 
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidOrderLineItemException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidOrderLineItemException;
 
 import java.util.Objects;
 

@@ -1,6 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.environment;
 
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidModeException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidModeException;
 
 public enum SimulationMode {
     INTERNAL,

@@ -1,6 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.shared.model.order;
 
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidProductException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidProductException;
 
 import java.util.Objects;
 
