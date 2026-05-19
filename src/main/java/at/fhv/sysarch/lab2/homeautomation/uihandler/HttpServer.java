@@ -32,6 +32,8 @@ public class HttpServer extends AllDirectives {
     private final MediaRoutes mediaRoutes;
     private final StatusRoutes statusRoutes;
 
+    // Routes werden einmal im Konstruktor initialisiert. Anfragen werden trotzdem bei jeder Request durch den passenden Route-Handler geleitet.
+    // VT: monolithischer HttpServer wäre unübersichtlich (ca. 600 Zeilen), Fehler wären schwer zu lokalisieren.
     public HttpServer(ActorRef<EnvironmentCoordinator.Command> environmentCoordinator, ActorRef<Fridge.FridgeCommand> fridgeActor,
                       ActorRef<MediaStation.MediaStationCommand> mediaStationActor, ActorRef<Blinds.BlindsCommand> blindsActor,
                       ActorRef<AirCondition.AirConditionCommand> airConditionActor, ActorSystem<?> system) {
