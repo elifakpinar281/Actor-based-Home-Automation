@@ -54,10 +54,7 @@ The frontend has all required actions:
 
 ## Architecture Overview
 
-### Actors – HomeAutomationSystem
-
-
-### Class Model
+[ClassDiagram.pdf](documentation_assests/ClassDiagram.pdf)
 
 
 ---

@@ -8,8 +8,7 @@ import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
 
-
-// Lebs als Child-Actor der Fridge (kein Receptionist-Eintrag)
+// Child-Actor des Fridge. Wird nur intern genutzt -> kein Receptionist-Eintrag nötig.
 public class WeightSensor extends AbstractBehavior<WeightSensor.WeightSensorCommand> {
     public interface WeightSensorCommand {}
 

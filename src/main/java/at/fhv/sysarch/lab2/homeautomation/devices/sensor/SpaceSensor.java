@@ -8,7 +8,7 @@ import org.apache.pekko.actor.typed.javadsl.ActorContext;
 import org.apache.pekko.actor.typed.javadsl.Behaviors;
 import org.apache.pekko.actor.typed.javadsl.Receive;
 
-
+// Child-Actor des Fridge. Wird nur intern genutzt -> kein Receptionist-Eintrag nötig.
 public class SpaceSensor extends AbstractBehavior<SpaceSensor.SpaceSensorCommand> {
     public interface SpaceSensorCommand {}
 
