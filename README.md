@@ -126,31 +126,23 @@ The fix is one shared adapter that checks `listing.isForKey(...)` and produces t
 Unrelated listings are turned into an `IgnoredListing`. 
 MediaStation only subscribes to one key (Blinds), but uses the same defensive pattern anyway in case more subscriptions are added later.
 
+### 4. Pekko Persistence JDBC for Order Persistence
 
-### 4. Blocking-IO Dispatcher for PersistenceActor
-
-JDBC calls block the thread they run on. 
-If the PersistenceActor used the default dispatcher, its DB inserts would block threads that are shared with all other actors, slowing the whole system down.
-
-So the PersistenceActor runs on its own `blocking-io-dispatcher` (configured in `src/main/resources/orderprocessor.conf`). 
-It has its own thread pool of four threads. Any blocking happens there and stays there.
-
-
-### 5. JDBC Instead of EventSourcedBehavior
-
-Plain JDBC, no ORM. 
-Event sourcing would have fit conceptually (orders never change after creation), but it would have been overkill for what this lab needs in our opinion.
-H2 runs in AUTO_SERVER mode, so you can connect a second tool (e.g. a DB browser) to the running DB and inspect it.
+The PersistenceActor uses EventSourcedBehavior from pekko-persistence-typed. 
+Each successful order is persisted as an OrderPersisted event in the journal. 
+On restart of the OrderProcessorSystem, all events are replayed and the state (list of processed order IDs) is automatically reconstructed. 
+Event serialization uses Jackson JSON. The database is H2 in in-memory mode, connected via pekko-persistence-jdbc (Slick). 
+The journal and snapshot tables are created automatically on connection startup (INIT=RUNSCRIPT in the JDBC URL).
 
 
-### 6. Per-Session OrderProcessor (Child) Instead of a Shared Worker
+### 5. Per-Session OrderProcessor (Child) Instead of a Shared Worker
 
 For every order, the Fridge spawns a fresh OrderProcessor child. 
 That child handles exactly one ProcessOrder message and then stops itself. 
 Every order gets its own actor, its own state and its own lifecycle. Nothing is shared between orders. This is the Per-Session Child pattern.
 
 
-### 7. Auto-Reorder on Empty Stock
+### 6. Auto-Reorder on Empty Stock
 
 When a product hits zero in the Fridge, the Fridge orders it again automatically. 
 It uses the same OrderProducts message as a user-initiated order, just without a `replyTo` (no one is waiting for a response).
@@ -160,7 +152,7 @@ If the auto-reorder wouldn't fit (item count or weight), it's skipped with a war
 The Fridge can never end up over capacity from an auto-reorder.
 
 
-### 8. Reorder in the Frontend
+### 7. Reorder in the Frontend
 
 Normally, when a product hits zero it would just disappear from the UI (because we filter on quantity > 0) and only reappear a few seconds 
 later when the auto-reorder finishes. 
@@ -170,7 +162,7 @@ Instead, the frontend keeps such products visible and shows a "Reordering..." pi
 As soon as the backend reports a quantity > 0 again, the pill disappears. The check is just `pendingReorders.has(id) && quantity === 0`.
 
 
-### 9. Records for Messages and DTOs
+### 8. Records for Messages and DTOs
 
 Every actor command, every response and every HTTP DTO is a Java record. We used records instead of plain classes.
 
@@ -180,7 +172,7 @@ Every actor command, every response and every HTTP DTO is a Java record. We used
 - Messages where the reply is sometimes wanted and sometimes not (like `Fridge.OrderProducts`) use `Optional<ActorRef<...>>` for the replyTo, plus two static factory methods: `fromUser(...)` (with reply) and `autoOrder(...)` (without). Both go through the same handler. We avoided two separate message types just to keep the code simple.
 
 
-### 10. Exception Handling – Domain Hierarchy + Global Handler
+### 9. Exception Handling – Domain Hierarchy + Global Handler
 All custom exceptions extend DomainException, which is a RuntimeException with an ErrorCode field.
 Each concrete exception takes structured arguments and builds its own message. 
 
@@ -199,8 +191,8 @@ Unchecked exceptions keep the route code readable.
 The trade-off is that you have to remember to handle domain errors in the global handler.
 
 
-### 12. Fridge Sensors
-We modelled the Sensors as two child actors of the Fridge (WeightSensor, SpraceSensor).
+### 10. Fridge Sensors
+We modelled the Sensors as two child actors of the Fridge (WeightSensor, SpaceSensor).
 Both sensors are spawned by the Fridge in its constructor and are not registered with the Receptionist.
 The Fridge pushes updates to them via fire-and-forget. 
 External actors can read the current values via request-response.

@@ -47,6 +47,7 @@ dependencies {
     implementation "org.apache.pekko:pekko-http_3:$pekkoVersion"
     implementation "org.apache.pekko:pekko-persistence-typed_3:$pekkoVersion"
     implementation "org.apache.pekko:pekko-persistence-jdbc_3:$pekkoVersion"
+    implementation "org.apache.pekko:pekko-serialization-jackson_3:$pekkoVersion"
     implementation "org.apache.pekko:pekko-persistence-query_3:$pekkoVersion"
     implementation "org.apache.pekko:pekko-http-jackson_3:$pekkoVersion"
 

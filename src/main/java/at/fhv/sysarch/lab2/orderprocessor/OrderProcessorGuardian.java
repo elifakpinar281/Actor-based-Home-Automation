@@ -13,7 +13,6 @@ public class OrderProcessorGuardian extends AbstractBehavior<OrderProcessorGuard
 
     private static final String GRPC_HOST = "127.0.0.1";
     private static final int GRPC_PORT = 50051;
-    private static final String BLOCKING_IO_DISPATCHER = "pekko.actor.blocking-io-dispatcher";
 
     public static Behavior<Command> create() {
         return Behaviors.setup(OrderProcessorGuardian::new);
@@ -22,15 +21,17 @@ public class OrderProcessorGuardian extends AbstractBehavior<OrderProcessorGuard
     private OrderProcessorGuardian(ActorContext<Command> context) {
         super(context);
 
-        // JDBC-Calls sind synchron und können den Thread blockieren.
-        // PersistenceActor läuft auf einem eigenen blocking-io-dispatcher, damit die JDBC-Calls nicht die Threads des default-dispatchers belegen
-        // Die Konfiguration dafür ist in orderprocessor.conf
+        // PersistenceActor nutzt EventSourcedBehavior mit pekko-persistence-jdbc.
+        // Die DB-Zugriffe laufen über den Slick-Thread-Pool (konfiguriert in orderprocessor.conf),
+        // daher ist kein eigener blocking-io-dispatcher mehr nötig.
         ActorRef<PersistenceActor.Command> persistenceActor = context.spawn(
                 PersistenceActor.create(),
-                "persistenceActor",
-                DispatcherSelector.fromConfig(BLOCKING_IO_DISPATCHER)
+                "persistenceActor"
         );
-        ActorRef<ValidationActor.Command> validationActor = context.spawn(ValidationActor.create(persistenceActor), "validationActor");
+        ActorRef<ValidationActor.Command> validationActor = context.spawn(
+                ValidationActor.create(persistenceActor),
+                "validationActor"
+        );
         startGrpcServer(validationActor);
     }
 

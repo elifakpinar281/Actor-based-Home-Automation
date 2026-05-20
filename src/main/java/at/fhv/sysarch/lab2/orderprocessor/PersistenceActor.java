@@ -1,118 +1,139 @@
 package at.fhv.sysarch.lab2.orderprocessor;
 
-import at.fhv.sysarch.lab2.orderprocessor.exception.PersistenceInitializationException;
-import org.apache.pekko.actor.typed.*;
-import org.apache.pekko.actor.typed.javadsl.*;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.pekko.actor.typed.ActorRef;
+import org.apache.pekko.actor.typed.Behavior;
+import org.apache.pekko.actor.typed.javadsl.ActorContext;
+import org.apache.pekko.actor.typed.javadsl.Behaviors;
+import org.apache.pekko.persistence.typed.PersistenceId;
+import org.apache.pekko.persistence.typed.javadsl.CommandHandler;
+import org.apache.pekko.persistence.typed.javadsl.EventHandler;
+import org.apache.pekko.persistence.typed.javadsl.EventSourcedBehavior;
 
-import java.sql.*;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-// siehe orderprocessor.conf
-public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command> {
+public class PersistenceActor extends EventSourcedBehavior<PersistenceActor.Command, PersistenceActor.OrderPersisted, PersistenceActor.OrderState> {
+
     public interface Command {}
 
-    public record PersistOrder(List<ValidationActor.OrderItemData> items, ActorRef<ValidationActor.ValidationResult> replyTo) implements Command {}
+    public record PersistOrder(
+            List<ValidationActor.OrderItemData> items,
+            ActorRef<ValidationActor.ValidationResult> replyTo
+    ) implements Command {}
 
-    private static final String JDBC_URL = "jdbc:h2:./data/orders;AUTO_SERVER=TRUE";
-    private static final String INSERT_SQL = "INSERT INTO orders (id, product_id, quantity, unit_price, total_price, status) VALUES (?, ?, ?, ?, ?, ?)";
+    // Event (wird in die DB geschrieben)
+    public static final class OrderPersisted {
+        public final String orderId;
+        public final List<OrderPersistedItem> items;
+        public final double totalPrice;
 
-    private final Connection dbConnection;
-
-    public static Behavior<Command> create() {
-        return Behaviors.setup(PersistenceActor::new);
-    }
-
-    private PersistenceActor(ActorContext<Command> context) {
-        super(context);
-        this.dbConnection = initDatabase();
-        getContext().getLog().info("PersistenceActor: H2 database initialized at {}", JDBC_URL);
-    }
-
-    private Connection initDatabase() {
-        try {
-            Class.forName("org.h2.Driver");
-            Connection connection = DriverManager.getConnection(JDBC_URL, "sa", "");
-            connection.setAutoCommit(false);
-            try (Statement statement = connection.createStatement()) {
-                statement.execute("""
-                    CREATE TABLE IF NOT EXISTS orders (
-                        id VARCHAR(100) PRIMARY KEY,
-                        product_id VARCHAR(50) NOT NULL,
-                        quantity INT NOT NULL,
-                        unit_price DOUBLE NOT NULL,
-                        total_price DOUBLE NOT NULL,
-                        status VARCHAR(20) NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """);
-                connection.commit();
-            }
-            return connection;
-        } catch (ClassNotFoundException ex) {
-            throw new PersistenceInitializationException("H2 Driver not found on classpath", ex);
-        } catch (SQLException ex) {
-            throw new PersistenceInitializationException("Failed to initialize H2 database: " + ex.getMessage(), ex);
+        @JsonCreator
+        public OrderPersisted(
+                @JsonProperty("orderId") String orderId,
+                @JsonProperty("items") List<OrderPersistedItem> items,
+                @JsonProperty("totalPrice") double totalPrice) {
+            this.orderId = orderId;
+            this.items = items;
+            this.totalPrice = totalPrice;
         }
     }
 
+    public static final class OrderPersistedItem {
+        public final String productId;
+        public final int quantity;
+        public final double unitPrice;
+
+        @JsonCreator
+        public OrderPersistedItem(
+                @JsonProperty("productId") String productId,
+                @JsonProperty("quantity") int quantity,
+                @JsonProperty("unitPrice") double unitPrice) {
+            this.productId = productId;
+            this.quantity = quantity;
+            this.unitPrice = unitPrice;
+        }
+    }
+
+    // State (wird beim Recovery aus den Events aufgebaut)
+    public static final class OrderState {
+        public final List<String> processedOrderIds;
+
+        public OrderState() {
+            this.processedOrderIds = Collections.emptyList();
+        }
+
+        public OrderState(List<String> processedOrderIds) {
+            this.processedOrderIds = processedOrderIds;
+        }
+
+        public OrderState withOrder(String orderId) {
+            List<String> updated = new ArrayList<>(processedOrderIds);
+            updated.add(orderId);
+            return new OrderState(updated);
+        }
+    }
+
+    private final ActorContext<Command> context;
+
+    public static Behavior<Command> create() {
+        return Behaviors.setup(context ->
+                new PersistenceActor(PersistenceId.ofUniqueId("order-processor"), context));
+    }
+
+    private PersistenceActor(PersistenceId persistenceId, ActorContext<Command> context) {
+        super(persistenceId);
+        this.context = context;
+    }
+
     @Override
-    public Receive<Command> createReceive() {
-        return newReceiveBuilder()
-                .onMessage(PersistOrder.class, this::onPersist)
-                .onSignal(PostStop.class, signal -> onPostStop())
+    public OrderState emptyState() {
+        return new OrderState();
+    }
+
+    @Override
+    public CommandHandler<Command, OrderPersisted, OrderState> commandHandler() {
+        return newCommandHandlerBuilder()
+                .forAnyState()
+                .onCommand(PersistOrder.class, this::onPersistOrder)
                 .build();
     }
 
-    private Behavior<Command> onPersist(PersistOrder msg) {
+    private org.apache.pekko.persistence.typed.javadsl.Effect<OrderPersisted, OrderState> onPersistOrder(
+            OrderState state, PersistOrder command) {
+
         String orderId = UUID.randomUUID().toString();
 
+        List<OrderPersistedItem> eventItems = new ArrayList<>(command.items().size());
         double rawTotal = 0.0;
-        for (ValidationActor.OrderItemData item : msg.items) {
+        for (ValidationActor.OrderItemData item : command.items()) {
+            eventItems.add(new OrderPersistedItem(item.productId(), item.quantity(), item.unitPrice()));
             rawTotal += item.quantity() * item.unitPrice();
         }
         double totalPrice = Math.round(rawTotal * 100.0) / 100.0;
 
-        try (PreparedStatement preparedStatement = dbConnection.prepareStatement(INSERT_SQL)) {
-            int lineNumber = 1;
-            for (ValidationActor.OrderItemData item : msg.items) {
-                preparedStatement.setString(1, orderId + "-" + lineNumber);
-                preparedStatement.setString(2, item.productId());
-                preparedStatement.setInt(3, item.quantity());
-                preparedStatement.setDouble(4, item.unitPrice());
-                double linePrice = Math.round(item.quantity() * item.unitPrice() * 100.0) / 100.0;
-                preparedStatement.setDouble(5, linePrice);
-                preparedStatement.setString(6, "COMPLETED");
-                preparedStatement.addBatch();
-                lineNumber++;
-            }
-            preparedStatement.executeBatch();
-            dbConnection.commit();
-            getContext().getLog().info("PersistenceActor: persisted order {} ({} items, total €{})", orderId, msg.items.size(), totalPrice);
-            msg.replyTo.tell(ValidationActor.ValidationResult.success(orderId, msg.items));
-        } catch (SQLException ex) {
-            rollbackSilently();
-            getContext().getLog().error("PersistenceActor: failed to persist order: {}", ex.getMessage());
-            msg.replyTo.tell(ValidationActor.ValidationResult.failure("Database error: " + ex.getMessage(), msg.items));
-        }
-        return Behaviors.same();
+        OrderPersisted event = new OrderPersisted(orderId, eventItems, totalPrice);
+
+        return Effect()
+                .persist(event)
+                .thenRun(newState -> {
+                    context.getLog().info(
+                            "PersistenceActor: persisted order {} ({} items, total €{})",
+                            orderId, command.items().size(), totalPrice);
+                    command.replyTo().tell(
+                            ValidationActor.ValidationResult.success(orderId, command.items()));
+                });
     }
 
-    private void rollbackSilently() {
-        try {
-            dbConnection.rollback();
-        } catch (SQLException ignored) {
-            // Fehler beim Rollback ist in der SQLException gelogged -> deswegen ignoriert
-        }
-    }
-
-    private Behavior<Command> onPostStop() {
-        try {
-            dbConnection.close();
-            getContext().getLog().info("PersistenceActor: database connection closed");
-        } catch (SQLException exception) {
-            getContext().getLog().warn("PersistenceActor: error closing connection: {}", exception.getMessage());
-        }
-        return this;
+    @Override
+    public EventHandler<OrderState, OrderPersisted> eventHandler() {
+        return newEventHandlerBuilder()
+                .forAnyState()
+                .onEvent(OrderPersisted.class,
+                        (state, event) -> state.withOrder(event.orderId))
+                .build();
     }
 }
