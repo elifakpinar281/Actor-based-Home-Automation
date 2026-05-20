@@ -1,5 +1,6 @@
 package at.fhv.sysarch.lab2.orderprocessor;
 
+import at.fhv.sysarch.lab2.orderprocessor.exception.PersistenceInitializationException;
 import org.apache.pekko.actor.typed.*;
 import org.apache.pekko.actor.typed.javadsl.*;
 
@@ -7,6 +8,7 @@ import java.sql.*;
 import java.util.List;
 import java.util.UUID;
 
+// siehe orderprocessor.conf
 public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command> {
     public interface Command {}
 
@@ -48,9 +50,9 @@ public class PersistenceActor extends AbstractBehavior<PersistenceActor.Command>
             }
             return connection;
         } catch (ClassNotFoundException ex) {
-            throw new IllegalStateException("H2 Driver not found on classpath", ex);
+            throw new PersistenceInitializationException("H2 Driver not found on classpath", ex);
         } catch (SQLException ex) {
-            throw new IllegalStateException("Failed to initialize H2 database: " + ex.getMessage(), ex);
+            throw new PersistenceInitializationException("Failed to initialize H2 database: " + ex.getMessage(), ex);
         }
     }
 

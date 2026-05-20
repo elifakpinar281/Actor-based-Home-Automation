@@ -38,7 +38,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
     public record OrderCompleted(Order order, Receipt receipt, Optional<ActorRef<OrderResponse>> replyTo) implements FridgeCommand {}
     public record OrderFailed(Order order, String reason, Optional<ActorRef<OrderResponse>> replyTo) implements FridgeCommand {}
-
     public record ProductsResponse(List<Product> products) {}
     public record OrderHistoryResponse(List<Order> orders) {}
     public record CapacityResponse(int currentItems, int maxItems, double currentWeight, double maxWeight) {}
@@ -63,6 +62,8 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     private final List<Order> orderHistory = new ArrayList<>();
     private final ActorRef<WeightSensor.WeightSensorCommand> weightSensor;
     private final ActorRef<SpaceSensor.SpaceSensorCommand> spaceSensor;
+    private int pendingItemCount = 0;
+    private double pendingWeightKg = 0.0;
 
     private Fridge(ActorContext<FridgeCommand> context, String identifier, int maxItems, double maxWeightKg, List<Product> initialInventory, OrderServiceClient grpcClient) {
         super(context);
@@ -73,14 +74,12 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         for (Product product : initialInventory) {
             inventory.put(product.id(), product);
         }
-        this.weightSensor = getContext().spawn(WeightSensor.create(identifier + "-weight-sensor", currentWeightKg()), "weightSensor");
-        this.spaceSensor = getContext().spawn(SpaceSensor.create(identifier + "-space-sensor", currentItemCount()), "spaceSensor");
-
-        getContext().getLog().info("Fridge '{}' started - max: {} items, {} kg, initial: {} items / {} kg",
-                identifier, maxItems, maxWeightKg, currentItemCount(), currentWeightKg());
+        this.weightSensor = getContext().spawn(WeightSensor.create(identifier + "-weight-sensor", storedWeightKg()), "weightSensor");
+        this.spaceSensor = getContext().spawn(SpaceSensor.create(identifier + "-space-sensor", storedItemCount()), "spaceSensor");
+        getContext().getLog().info("Fridge '{}' started - max: {} items, {} kg, initial: {} items / {} kg", identifier, maxItems, maxWeightKg, storedItemCount(), storedWeightKg());
     }
 
-    private int currentItemCount() {
+    private int storedItemCount() {
         int total = 0;
         for (Product product : inventory.values()) {
             total += product.quantity();
@@ -88,7 +87,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         return total;
     }
 
-    private double currentWeightKg() {
+    private double storedWeightKg() {
         double total = 0.0;
         for (Product product : inventory.values()) {
             total += product.totalWeight();
@@ -96,9 +95,17 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         return total;
     }
 
+    private int committedItemCount() {
+        return storedItemCount() + pendingItemCount;
+    }
+
+    private double committedWeightKg() {
+        return storedWeightKg() + pendingWeightKg;
+    }
+
     private void notifySensors() {
-        weightSensor.tell(new WeightSensor.WeightChanged(currentWeightKg()));
-        spaceSensor.tell(new SpaceSensor.SpaceChanged(currentItemCount()));
+        weightSensor.tell(new WeightSensor.WeightChanged(storedWeightKg()));
+        spaceSensor.tell(new SpaceSensor.SpaceChanged(storedItemCount()));
     }
 
     @Override
@@ -126,7 +133,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     }
 
     private Behavior<FridgeCommand> onGetCapacity(GetCapacity msg) {
-        msg.replyTo().tell(new CapacityResponse(currentItemCount(), maxItems, currentWeightKg(), maxWeightKg));
+        msg.replyTo().tell(new CapacityResponse(storedItemCount(), maxItems, storedWeightKg(), maxWeightKg));
         return Behaviors.same();
     }
 
@@ -144,7 +151,6 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         inventory.put(updated.id(), updated);
         notifySensors();
         getContext().getLog().info("Fridge '{}': consumed {} x {} (remaining: {})", identifier, msg.quantity(), product.name(), updated.quantity());
-
         if (updated.quantity() == 0) {
             triggerAutoOrder(updated.id());
         }
@@ -153,23 +159,30 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
     private Behavior<FridgeCommand> onOrderProducts(OrderProducts msg) {
         List<OrderLineItem> lineItems;
+        int totalNewItems;
+        double totalNewWeight;
         try {
-            lineItems = validateAndBuildLineItems(msg.items());
+            ValidationResult validation = validateAndBuildLineItems(msg.items());
+            lineItems = validation.lineItems;
+            totalNewItems = validation.totalItems;
+            totalNewWeight = validation.totalWeight;
         } catch (FridgeException ex) {
             getContext().getLog().warn("Fridge '{}': order validation failed: {}", identifier, ex.getMessage());
             msg.replyTo().ifPresent(replyTo -> replyTo.tell(new OrderResponse(false, ex.getMessage(), null)));
             return Behaviors.same();
         }
-
+        pendingItemCount += totalNewItems;
+        pendingWeightKg += totalNewWeight;
         Order order = Order.create(lineItems).withStatus(OrderStatus.PROCESSING);
         orderHistory.add(order);
         ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor = getContext().spawnAnonymous(OrderProcessor.create(grpcClient, getContext().getSelf()));
         sessionProcessor.tell(new OrderProcessor.ProcessOrder(order, msg.replyTo()));
-        getContext().getLog().info("Fridge '{}': dispatched order {} ({} positions, €{}) to external processor", identifier, order.orderId(), order.lineItems().size(), order.totalPrice());
+        getContext().getLog().info("Fridge '{}': dispatched order {} ({} positions, €{}) to external processor - reserved {} items / {} kg", identifier, order.orderId(), order.lineItems().size(), order.totalPrice(), totalNewItems, String.format("%.2f", totalNewWeight));
         return Behaviors.same();
     }
 
     private Behavior<FridgeCommand> onOrderCompleted(OrderCompleted msg) {
+        releaseReservation(msg.order());
         replaceOrderInHistory(msg.order().completed(msg.receipt().receiptId()));
         for (OrderLineItem item : msg.order().lineItems()) {
             Product existing = inventory.get(item.productId());
@@ -187,10 +200,28 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
     }
 
     private Behavior<FridgeCommand> onOrderFailed(OrderFailed msg) {
+        releaseReservation(msg.order());
         replaceOrderInHistory(msg.order().failed());
         getContext().getLog().warn("Fridge '{}': order {} failed - {}", identifier, msg.order().orderId(), msg.reason());
         msg.replyTo().ifPresent(replyTo -> replyTo.tell(new OrderResponse(false, msg.reason(), null)));
         return Behaviors.same();
+    }
+
+    private void releaseReservation(Order order) { // Reservierung da mögliche Race Conditions
+        int items = 0;
+        double weight = 0.0;
+        for (OrderLineItem item : order.lineItems()) {
+            items += item.quantity();
+            weight += item.totalWeight();
+        }
+        pendingItemCount -= items;
+        pendingWeightKg -= weight;
+        if (pendingItemCount < 0) {
+            pendingItemCount = 0;
+        }
+        if (pendingWeightKg < 0.0) {
+            pendingWeightKg = 0.0;
+        }
     }
 
     private void replaceOrderInHistory(Order updated) {
@@ -202,11 +233,12 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         }
     }
 
-    private List<OrderLineItem> validateAndBuildLineItems(Map<String, Integer> items) throws FridgeException {
+    private record ValidationResult(List<OrderLineItem> lineItems, int totalItems, double totalWeight) {}
+
+    private ValidationResult validateAndBuildLineItems(Map<String, Integer> items) throws FridgeException {
         if (items == null || items.isEmpty()) {
             throw new InvalidOrderException("Order must contain at least one item");
         }
-
         List<OrderLineItem> lineItems = new ArrayList<>(items.size());
         int totalNewItems = 0;
         double totalNewWeight = 0.0;
@@ -226,13 +258,13 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             totalNewWeight += product.weight() * quantity;
         }
 
-        if (currentItemCount() + totalNewItems > maxItems) {
-            throw new InsufficientSpaceException(currentItemCount(), maxItems, totalNewItems);
+        if (committedItemCount() + totalNewItems > maxItems) {
+            throw new InsufficientSpaceException(committedItemCount(), maxItems, totalNewItems);
         }
-        if (currentWeightKg() + totalNewWeight > maxWeightKg) {
-            throw new InsufficientWeightCapacityException(currentWeightKg(), maxWeightKg, totalNewWeight);
+        if (committedWeightKg() + totalNewWeight > maxWeightKg) {
+            throw new InsufficientWeightCapacityException(committedWeightKg(), maxWeightKg, totalNewWeight);
         }
-        return lineItems;
+        return new ValidationResult(lineItems, totalNewItems, totalNewWeight);
     }
 
     private void triggerAutoOrder(String productId) {
@@ -241,20 +273,17 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
             getContext().getLog().warn("Fridge '{}': auto-order skipped - product {} no longer in inventory", identifier, productId);
             return;
         }
-
         int target = product.initialQuantity();
-        int remainingSlots = maxItems - currentItemCount();
-        double remainingWeightKg = maxWeightKg - currentWeightKg();
+        int remainingSlots = maxItems - committedItemCount();
+        double remainingWeightKg = maxWeightKg - committedWeightKg();
         double neededWeightKg = product.weight() * target;
 
         if (target > remainingSlots) {
             getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' - needs {} slots but only {} available", identifier, product.name(), target, remainingSlots);
             return;
         }
-
         if (neededWeightKg > remainingWeightKg) {
-            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' - needs {} kg but only {} kg remaining", identifier, product.name(),
-                    String.format("%.2f", neededWeightKg), String.format("%.2f", remainingWeightKg));
+            getContext().getLog().warn("Fridge '{}': auto-order skipped for '{}' - needs {} kg but only {} kg remaining", identifier, product.name(), String.format("%.2f", neededWeightKg), String.format("%.2f", remainingWeightKg));
             return;
         }
         getContext().getLog().info("Fridge '{}': auto-ordering {} x '{}' (restoring to initial stock)", identifier, target, product.name());

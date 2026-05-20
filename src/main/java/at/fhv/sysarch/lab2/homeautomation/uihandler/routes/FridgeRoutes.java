@@ -6,6 +6,7 @@ import at.fhv.sysarch.lab2.homeautomation.shared.model.order.OrderLineItem;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.order.Product;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.order.Receipt;
 import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidOrderException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.ProductNotAvailableException;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.CapacityDto;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.OrderDto;
 import at.fhv.sysarch.lab2.homeautomation.uihandler.dtos.OrderHistoryDto;
@@ -131,8 +132,28 @@ public class FridgeRoutes extends AllDirectives {
                             if (quantity <= 0) {
                                 throw new InvalidOrderException("Quantity must be positive");
                             }
-                            fridgeActor.tell(new Fridge.ConsumeProduct(productId, quantity));
-                            return complete(StatusCodes.ACCEPTED, new SuccessResponse("Product consumption request sent"), Jackson.marshaller());
+                            return onSuccess(
+                                    AskPattern.ask(fridgeActor, Fridge.GetProducts::new, ASK_TIMEOUT, system.scheduler()),
+                                    productsResponse -> {
+                                        Product matched = null;
+                                        for (Product product : productsResponse.products()) {
+                                            if (product.id().equals(productId)) {
+                                                matched = product;
+                                                break;
+                                            }
+                                        }
+                                        if (matched == null) {
+                                            throw new ProductNotAvailableException(productId, quantity, 0);
+                                        }
+                                        if (matched.quantity() < quantity) {
+                                            throw new ProductNotAvailableException(productId, quantity, matched.quantity());
+                                        }
+                                        fridgeActor.tell(new Fridge.ConsumeProduct(productId, quantity));
+                                        return complete(StatusCodes.ACCEPTED,
+                                                new SuccessResponse("Product consumption request sent"),
+                                                Jackson.marshaller());
+                                    }
+                            );
                         })
                 )
         );
