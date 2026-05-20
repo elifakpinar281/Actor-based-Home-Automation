@@ -7,9 +7,11 @@ import org.apache.pekko.http.javadsl.model.StatusCodes;
 import org.apache.pekko.http.javadsl.server.AllDirectives;
 import org.apache.pekko.http.javadsl.server.ExceptionHandler;
 import org.apache.pekko.http.javadsl.server.Route;
+import org.h2.schema.Domain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+// Wir trennen Domain-Validation (Exceptions an Systemgrenzen, Regeln) von Inter-Actor-Communication (Result-Messages mit success/failure).
 public final class GlobalExceptionHandler extends AllDirectives {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
