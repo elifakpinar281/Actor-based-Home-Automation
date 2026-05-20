@@ -208,3 +208,5 @@ ___
 ## Further Documentation
 
 [INTERACTION_PATTERNS.md](INTERACTION_PATTERNS.md) - walkthrough of the interaction patterns used in the system.
+
+[ClassDiagram.pdf](documentation_assests/ClassDiagram.pdf) - detailed class diagram of the HomeAutomationSystem and OrderProcessor actors and messages.

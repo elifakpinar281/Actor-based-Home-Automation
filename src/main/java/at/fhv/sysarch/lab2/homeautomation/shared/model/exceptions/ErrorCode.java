@@ -1,4 +1,4 @@
-package at.fhv.sysarch.lab2.homeautomation.shared.exceptions;
+package at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions;
 
 public enum ErrorCode {
     ENV_INVALID_TEMPERATURE,

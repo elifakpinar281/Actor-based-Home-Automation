@@ -1,4 +1,4 @@
-package at.fhv.sysarch.lab2.homeautomation.shared.exceptions;
+package at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions;
 
 public class InsufficientSpaceException extends FridgeException {
     public InsufficientSpaceException(int currentSize, int maxSize, int attemptedAddition) {

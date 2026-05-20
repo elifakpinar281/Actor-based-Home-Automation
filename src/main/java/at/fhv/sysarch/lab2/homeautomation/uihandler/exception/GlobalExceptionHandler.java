@@ -1,6 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.uihandler.exception;
 
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.*;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.*;
 import org.apache.pekko.http.javadsl.marshallers.jackson.Jackson;
 import org.apache.pekko.http.javadsl.model.StatusCode;
 import org.apache.pekko.http.javadsl.model.StatusCodes;

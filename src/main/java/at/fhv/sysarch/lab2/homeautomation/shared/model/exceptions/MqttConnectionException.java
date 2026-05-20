@@ -1,4 +1,4 @@
-package at.fhv.sysarch.lab2.homeautomation.shared.exceptions;
+package at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions;
 
 public class MqttConnectionException extends DomainException {
     public MqttConnectionException(String brokerUrl, String reason) {

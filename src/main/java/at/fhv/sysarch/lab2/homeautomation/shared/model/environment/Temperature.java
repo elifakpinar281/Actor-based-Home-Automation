@@ -1,6 +1,6 @@
 package at.fhv.sysarch.lab2.homeautomation.shared.model.environment;
 
-import at.fhv.sysarch.lab2.homeautomation.shared.exceptions.InvalidTemperatureException;
+import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidTemperatureException;
 
 
 public record Temperature(double value, String unit) {
