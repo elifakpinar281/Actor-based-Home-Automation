@@ -85,13 +85,13 @@ public class HomeAutomationController extends AbstractBehavior<Void> {
     }
 
     private void connectMqttClient(ActorRef<EnvironmentCoordinator.Command> environmentCoordinator) {
+        MqttEnvironmentClient client = new MqttEnvironmentClient(environmentCoordinator);
+        this.mqttClient = client;
         try {
-            MqttEnvironmentClient client = new MqttEnvironmentClient(environmentCoordinator);
             client.connect();
-            this.mqttClient = client;
             getContext().getLog().info("MQTT connected successfully");
         } catch (MqttConnectionException ex) {
-            getContext().getLog().warn("MQTT not available (system will run without external weather): {}", ex.getMessage());
+            getContext().getLog().warn("MQTT not available at startup - reconnect scheduler is active and will retry: {}", ex.getMessage());
         }
     }
 

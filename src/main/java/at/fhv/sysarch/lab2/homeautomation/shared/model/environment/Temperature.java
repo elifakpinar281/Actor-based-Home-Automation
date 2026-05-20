@@ -5,7 +5,7 @@ import at.fhv.sysarch.lab2.homeautomation.shared.model.exceptions.InvalidTempera
 
 public record Temperature(double value, String unit) {
     public static final double MIN_CELSIUS = -50.0;
-    public static final double MAX_CELSIUS = 60.0;
+    public static final double MAX_CELSIUS = 70.0;
     public static final String CELSIUS_UNIT = "°C";
 
     public Temperature {

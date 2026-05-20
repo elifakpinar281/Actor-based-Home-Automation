@@ -18,10 +18,10 @@ An actor uses a timer to send messages to itself periodically.
 
 **How it works:**
 
-When a Tick arrives, the actor adds a small random delta to the current temperature and pushes the new value to the EnvironmentCoordinator 
+When a Tick arrives, the actor adds a small random delta to the current temperature and pushes the new value to the EnvironmentCoordinator
 as an `InternalTemperatureUpdate`.
 
-The temperature drifts gradually over time. 
+The temperature drifts gradually over time.
 No extra thread is needed. Pekko's scheduler handles the timer. When the actor stops, the timer is cancelled automatically.
 
 ---
@@ -40,13 +40,15 @@ This is the most common pattern in the system. It is used everywhere where a rep
 4. WeatherSensor -> Blinds: WeatherUpdate
 5. MediaStation -> Blinds: MovieStatusChanged
 6. MqttEnvironmentClient -> EnvironmentCoordinator: MqttTemperatureUpdate / MqttWeatherUpdate
+7. Fridge -> WeightSensor: WeightChanged (after every inventory mutation)
+8. Fridge -> SpaceSensor: SpaceChanged (after every inventory mutation)
 
 
 <img src="documentation_assests/Fire_and_Forget.png" alt="Fire_and_Forget" width="800"/>
 
 
 
-Sensors broadcast their measurements to the actuators that need them. 
+Sensors broadcast their measurements to the actuators that need them.
 A reply like "AC got the update" wouldn't mean anything. There's nothing the sensor would do with it. The same holds for coordinator-to-sensor messages.
 
 ---
@@ -63,31 +65,34 @@ Everywhere the HTTP routes need data from an actor to put into an HTTP response.
 
 
 Example: /status aggregates four actors in parallel.
-Each actor receives a `replyTo: ActorRef<...Response>` in its request message. 
-HTTP is synchronous. The client is waiting for an answer. 
-So we need exactly one Future per actor call, with a timeout. 
-Ask gives us that timeout for free and creates a short-lived internal adapter actor that receives the reply. 
+Each actor receives a `replyTo: ActorRef<...Response>` in its request message.
+HTTP is synchronous. The client is waiting for an answer.
+So we need exactly one Future per actor call, with a timeout.
+Ask gives us that timeout for free and creates a short-lived internal adapter actor that receives the reply.
 This is the right fit whenever the HTTP layer needs a snapshot from an actor.
+
+The Fridge's `WeightSensor` and `SpaceSensor` also follow this pattern. They respond to `GetWeight` / `GetSpace` with a `WeightResponse` / `SpaceResponse`.
+This isn't currently used by an HTTP route (the existing `/fridge/capacity` endpoint asks the Fridge directly), but the sensors are addressable on their own if a future feature ever needs an isolated reading.
 
 ---
 
 ## 4. Send Future Result to Self (pipeToSelf)
 
-An actor calls something that returns a CompletionStage (like a gRPC client) and wants to handle the result as a normal 
+An actor calls something that returns a CompletionStage (like a gRPC client) and wants to handle the result as a normal
 Pekko message. Inside the actor, not inside a future callback.
 
 **Used in:**
 
-devices/OrderProcessor.java. 
+devices/OrderProcessor.java.
 The per-session child calls the gRPC client. When the response comes back, we want it to flow through the actor's mailbox like any other message.
 
 **How it works:**
 
-`pipeToSelf` turns a CompletionStage into a message that arrives at the actor's mailbox. 
-The `CompletionStage<OrderResponse>` from the gRPC call is wrapped into either a `GrpcResponse` (on success) or `GrpcFailure` (on error) and sent to self. 
+`pipeToSelf` turns a CompletionStage into a message that arrives at the actor's mailbox.
+The `CompletionStage<OrderResponse>` from the gRPC call is wrapped into either a `GrpcResponse` (on success) or `GrpcFailure` (on error) and sent to self.
 From there everything continues normally: gRPC success -> build the receipt -> tell the Fridge.
 
-The alternative is calling the gRPC client and handling the result inside the future's callback. This would break the actor model. 
+The alternative is calling the gRPC client and handling the result inside the future's callback. This would break the actor model.
 That callback runs on a different thread, so touching the actor's internal state from there is not safe.
 
 ---
@@ -141,12 +146,19 @@ Actors register under service keys. Other actors subscribe to those keys and get
 
 **Used in:**
 
-Every inter-actor relationship in the HomeAutomationSystem, except the per-session children of the Fridge:
+Every inter-actor relationship in the HomeAutomationSystem, except the children of the Fridge:
 
 - `EnvironmentCoordinator` subscribes to `TemperatureSensor.SERVICE_KEY` and `WeatherSensor.SERVICE_KEY`
 - `TemperatureSensor` subscribes to `AirCondition.SERVICE_KEY`
 - `WeatherSensor` subscribes to `Blinds.SERVICE_KEY`
 - `MediaStation` subscribes to `Blinds.SERVICE_KEY`
+
+The Fridge has two types of children and neither is in the Receptionist:
+
+- `OrderProcessor` - per-session, one per order, lives for one message (see Pattern 6)
+- `WeightSensor` / `SpaceSensor` - long-lived, one each, follow the Fridge's lifecycle (see Design Decision 11 in the README)
+
+These children are only addressable through the Fridge, which is what the assignment intends: "the fridge spawns their own child actors".
 
 
 **Why use it instead of passing references via the constructor:**
@@ -168,18 +180,17 @@ The bridge connects the HomeAutomationSystem (Fridge and its per-session OrderPr
 
 **Client side (HomeAutomationSystem):**
 
-The gRPC client is created once in the controller and passed down to the per-session OrderProcessor children (no new channel per order). 
+The gRPC client is created once in the controller and passed down to the per-session OrderProcessor children (no new channel per order).
 The child calls `grpcClient.processOrder(...)` and turns the future into a self-message with pipeToSelf (see Pattern 4).
 
 **Server side (OrderProcessorSystem):**
 
-OrderServiceActorImpl implements the generated OrderService interface. 
-Incoming gRPC calls are forwarded into the actor system via `AskPattern.ask` to the ValidationActor. 
+OrderServiceActorImpl implements the generated OrderService interface.
+Incoming gRPC calls are forwarded into the actor system via `AskPattern.ask` to the ValidationActor.
 From there the call flows through the actor pipeline (Validation -> Persistence) and the result is sent back as the gRPC response.
 
 
 
 **Why?**
-
 - Pekko gRPC generates the server and client stubs from the `.proto` file. We don't have to write any serialization or deserialization code.
 - The two systems are only coupled through the `.proto` schema. They can be started, deployed and updated independently.

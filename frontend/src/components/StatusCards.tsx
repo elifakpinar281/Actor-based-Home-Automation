@@ -7,6 +7,7 @@ function weatherLabel(w: string): string {
     if (w === "RAINY") return "Rainy";
     if (w === "CLOUDY") return "Cloudy";
     if (w === "SNOWY") return "Snowy";
+    if (w === "STORMY") return "Stormy";
     return w;
 }
 

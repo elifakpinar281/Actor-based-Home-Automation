@@ -75,7 +75,9 @@ Discovery relationships:
 4. WeatherSensor -> Blinds: Receptionist
 5. MediaStation -> Blinds: Receptionist
 6. Fridge -> OrderProcessor: child spawn
-7. Routes -> all actors: direct reference (bind)
+7. Fridge -> WeightSensor: child spawn
+8. Fridge -> SpaceSensor: child spawn
+9. Routes -> all actors: direct reference (bind)
 
 The HTTP routes hold direct references to actors because they are not actors themselves. They are the boundary to the "outside".
 
@@ -197,13 +199,18 @@ Unchecked exceptions keep the route code readable.
 The trade-off is that you have to remember to handle domain errors in the global handler.
 
 
+### 12. Fridge Sensors
+We modelled the Sensors as two child actors of the Fridge (WeightSensor, SpraceSensor).
+Both sensors are spawned by the Fridge in its constructor and are not registered with the Receptionist.
+The Fridge pushes updates to them via fire-and-forget. 
+External actors can read the current values via request-response.
+
 ### 11. Shutdown and Shutdown Hook
 
 Both actor systems register a JVM shutdown hook (so Strg+C does the right thing). Both hooks call `system.terminate()`. 
 The HomeAutomation hook additionally waits up to 5 seconds via `getWhenTerminated().get(5, TimeUnit.SECONDS)`, which gives the gRPC client, 
 HTTP binding and MQTT connection time to shut down cleanly.
-The OrderProcessor hook just calls `terminate()` without waiting. 
-
+The OrderProcessor hook just calls `terminate()` without waiting.
 ___
 ## Further Documentation
 

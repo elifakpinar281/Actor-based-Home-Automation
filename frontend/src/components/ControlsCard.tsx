@@ -10,8 +10,8 @@ interface Props {
     status: Status | null;
 }
 
-const TEMP_MIN = -5;
-const TEMP_MAX = 35;
+const TEMP_MIN = -50;
+const TEMP_MAX = 70;
 const TEMP_STEP = 0.5;
 
 export function ControlsCard({ status }: Props) {
@@ -142,13 +142,14 @@ export function ControlsCard({ status }: Props) {
 
             <p className="topbar-label mb-1">Weather</p>
             <Hint>
-                Pick the weather. SUNNY weather closes the blinds. Any other condition opens them unless a movie is playing.
+                Pick the weather. SUNNY closes the blinds. STORMY forces the blinds OPEN for safety, even if a movie is playing. Any other condition opens the blinds unless a movie is playing.
             </Hint>
-            <div className={`neu-inset p-1.5 grid grid-cols-4 gap-1 mt-3 mb-6 ${!isFixed ? "opacity-50 pointer-events-none" : ""}`}>
+            <div className={`neu-inset p-1.5 grid grid-cols-5 gap-1 mt-3 mb-6 ${!isFixed ? "opacity-50 pointer-events-none" : ""}`}>
                 <WeatherPill label="Sunny"  active={currentWeather === "SUNNY"}  onClick={() => chooseWeather("SUNNY")}  glyph={<SunGlyph />} />
                 <WeatherPill label="Rainy"  active={currentWeather === "RAINY"}  onClick={() => chooseWeather("RAINY")}  glyph={<DropGlyph />} />
                 <WeatherPill label="Cloudy" active={currentWeather === "CLOUDY"} onClick={() => chooseWeather("CLOUDY")} glyph={<CloudGlyph />} />
                 <WeatherPill label="Snowy"  active={currentWeather === "SNOWY"}  onClick={() => chooseWeather("SNOWY")}  glyph={<SnowGlyph />} />
+                <WeatherPill label="Stormy" active={currentWeather === "STORMY"} onClick={() => chooseWeather("STORMY")} glyph={<StormGlyph />} />
             </div>
 
             <p className="topbar-label mb-1">Simulation Mode</p>
@@ -256,6 +257,14 @@ function SnowGlyph() {
     return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 2v20M2 12h20M5 5l14 14M19 5L5 19" />
+        </svg>
+    );
+}
+function StormGlyph() {
+    return (
+        <svg width="16" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+            <path d="M17.5 14a4.5 4.5 0 0 0 .5-9 6 6 0 0 0-11.7 1.5A4 4 0 0 0 7 14h2" />
+            <path d="M13 11l-3 5h3l-2 5" strokeLinecap="round" fill="none" />
         </svg>
     );
 }

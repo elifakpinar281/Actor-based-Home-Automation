@@ -64,20 +64,25 @@ public class Blinds extends AbstractBehavior<Blinds.BlindsCommand> {
         return Behaviors.same();
     }
 
+    // Stormy weather -> Blinds öffnen sich, unabhängig von allem anderen
     private void updateBlindsState() {
+        boolean isStormy = currentWeather.map(condition -> condition == WeatherCondition.STORMY).orElse(false);
+
         boolean shouldBeClosed;
-        if (isMoviePlaying) {
+        String reason;
+        if (isStormy) {
+            shouldBeClosed = false;
+            reason = "storm safety override";
+        } else if (isMoviePlaying) {
             shouldBeClosed = true;
+            reason = "movie playing";
         } else {
-            shouldBeClosed = currentWeather.map(condition -> condition == WeatherCondition.SUNNY)
-                    .orElse(false);
+            shouldBeClosed = currentWeather.map(condition -> condition == WeatherCondition.SUNNY).orElse(false);
+            reason = "weather: " + currentWeather.map(Enum::name).orElse("unknown");
         }
 
         if (shouldBeClosed != areClosed) {
             areClosed = shouldBeClosed;
-            String reason = isMoviePlaying
-                    ? "movie playing"
-                    : "weather: " + currentWeather.map(Enum::name).orElse("unknown");
             getContext().getLog().info("Blinds '{}': {} (reason: {})",
                     identifier, areClosed ? "CLOSED" : "OPENED", reason);
         }
