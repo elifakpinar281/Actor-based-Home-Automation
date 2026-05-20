@@ -38,6 +38,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
 
     public record OrderCompleted(Order order, Receipt receipt, Optional<ActorRef<OrderResponse>> replyTo) implements FridgeCommand {}
     public record OrderFailed(Order order, String reason, Optional<ActorRef<OrderResponse>> replyTo) implements FridgeCommand {}
+    public record OrderProcessorCrashed(Order order, Optional<ActorRef<OrderResponse>> replyTo) implements FridgeCommand {}
     public record ProductsResponse(List<Product> products) {}
     public record OrderHistoryResponse(List<Order> orders) {}
     public record CapacityResponse(int currentItems, int maxItems, double currentWeight, double maxWeight) {}
@@ -118,6 +119,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
                 .onMessage(OrderProducts.class, this::onOrderProducts)
                 .onMessage(OrderCompleted.class, this::onOrderCompleted)
                 .onMessage(OrderFailed.class, this::onOrderFailed)
+                .onMessage(OrderProcessorCrashed.class, this::onOrderProcessorCrashed)
                 .onSignal(PostStop.class, signal -> onPostStop())
                 .build();
     }
@@ -176,6 +178,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         Order order = Order.create(lineItems).withStatus(OrderStatus.PROCESSING);
         orderHistory.add(order);
         ActorRef<OrderProcessor.OrderProcessorCommand> sessionProcessor = getContext().spawnAnonymous(OrderProcessor.create(grpcClient, getContext().getSelf()));
+        getContext().watchWith(sessionProcessor, new OrderProcessorCrashed(order, msg.replyTo()));
         sessionProcessor.tell(new OrderProcessor.ProcessOrder(order, msg.replyTo()));
         getContext().getLog().info("Fridge '{}': dispatched order {} ({} positions, €{}) to external processor - reserved {} items / {} kg", identifier, order.orderId(), order.lineItems().size(), order.totalPrice(), totalNewItems, String.format("%.2f", totalNewWeight));
         return Behaviors.same();
@@ -186,7 +189,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         replaceOrderInHistory(msg.order().completed(msg.receipt().receiptId()));
         for (OrderLineItem item : msg.order().lineItems()) {
             Product existing = inventory.get(item.productId());
-            if (existing == null) { // sollte nicht passieren, da Validierung ja schon geprüft hat
+            if (existing == null) {
                 getContext().getLog().error("Fridge '{}': inventory entry for {} missing during order completion - skipping", identifier, item.productId());
                 continue;
             }
@@ -207,7 +210,7 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         return Behaviors.same();
     }
 
-    private void releaseReservation(Order order) { // Reservierung da mögliche Race Conditions
+    private void releaseReservation(Order order) {
         int items = 0;
         double weight = 0.0;
         for (OrderLineItem item : order.lineItems()) {
@@ -288,6 +291,20 @@ public class Fridge extends AbstractBehavior<Fridge.FridgeCommand> {
         }
         getContext().getLog().info("Fridge '{}': auto-ordering {} x '{}' (restoring to initial stock)", identifier, target, product.name());
         getContext().getSelf().tell(OrderProducts.autoOrder(Map.of(productId, target)));
+    }
+
+    private Behavior<FridgeCommand> onOrderProcessorCrashed(OrderProcessorCrashed msg) {
+        boolean stillProcessing = orderHistory.stream().filter(o -> o.orderId().equals(msg.order().orderId()))
+                .anyMatch(o -> o.status() == OrderStatus.PROCESSING);
+        if (!stillProcessing) {
+            return Behaviors.same();
+        }
+        releaseReservation(msg.order());
+        replaceOrderInHistory(msg.order().failed());
+        String reason = "OrderProcessor actor crashed unexpectedly";
+        getContext().getLog().error("Fridge '{}': order {} lost – {}", identifier, msg.order().orderId(), reason);
+        msg.replyTo().ifPresent(r -> r.tell(new OrderResponse(false, reason, null)));
+        return Behaviors.same();
     }
 
     private Behavior<FridgeCommand> onPostStop() {
