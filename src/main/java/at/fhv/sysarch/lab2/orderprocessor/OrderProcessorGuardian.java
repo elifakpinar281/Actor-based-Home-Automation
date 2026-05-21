@@ -16,10 +16,12 @@ import java.util.concurrent.CompletionStage;
 
 public class OrderProcessorGuardian extends AbstractBehavior<OrderProcessorGuardian.Command> {
     public interface Command {}
+
     private record GrpcBindingComplete(ServerBinding binding, Throwable error) implements Command {}
 
     private static final String GRPC_HOST = "127.0.0.1";
     private static final int GRPC_PORT = 50051;
+    private static final Duration BINDING_TERMINATE_TIMEOUT = Duration.ofSeconds(5);
 
     private ServerBinding serverBinding;
 
@@ -32,12 +34,11 @@ public class OrderProcessorGuardian extends AbstractBehavior<OrderProcessorGuard
 
         ActorRef<PersistenceActor.Command> persistenceActor = context.spawn(
                 PersistenceActor.create(),
-                "persistenceActor"
-        );
+                "persistenceActor");
+
         ActorRef<ValidationActor.Command> validationActor = context.spawn(
                 ValidationActor.create(persistenceActor),
-                "validationActor"
-        );
+                "validationActor");
 
         startGrpcServer(validationActor);
     }
@@ -50,8 +51,8 @@ public class OrderProcessorGuardian extends AbstractBehavior<OrderProcessorGuard
                 .newServerAt(GRPC_HOST, GRPC_PORT)
                 .bind(OrderServiceHandlerFactory.create(serviceImpl, getContext().getSystem()));
 
-        getContext().pipeToSelf(binding, (result, error) ->
-                new GrpcBindingComplete(result, error));
+        getContext().pipeToSelf(binding,
+                (result, error) -> new GrpcBindingComplete(result, error));
     }
 
     @Override
@@ -78,7 +79,7 @@ public class OrderProcessorGuardian extends AbstractBehavior<OrderProcessorGuard
 
     private Behavior<Command> onPostStop(PostStop signal) {
         if (serverBinding != null) {
-            serverBinding.terminate(Duration.ofSeconds(5));
+            serverBinding.terminate(BINDING_TERMINATE_TIMEOUT);
             getContext().getLog().info("gRPC server binding terminated");
         }
         getContext().getLog().info("OrderProcessorSystem stopped");

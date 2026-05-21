@@ -9,25 +9,37 @@ public class ValidationActor extends AbstractBehavior<ValidationActor.Command> {
 
     public interface Command {}
 
-    public record ValidateOrder(List<OrderItemData> items, ActorRef<ValidationResult> replyTo) implements Command {}
+    public record ValidateOrder(
+            List<OrderItemData> items,
+            ActorRef<ValidationResult> replyTo
+    ) implements Command {}
+
     public record OrderItemData(String productId, int quantity, double unitPrice) {}
 
-    public record ValidationResult(boolean valid, String orderId, String errorMessage, List<OrderItemData> items) {
-        public static ValidationResult success(String orderId, List<OrderItemData> items) {
-            return new ValidationResult(true, orderId, null, items);
+    public record ValidationResult(
+            boolean valid,
+            String orderId,
+            String errorMessage,
+            List<OrderItemData> items,
+            double totalPrice
+    ) {
+        public static ValidationResult success(String orderId, List<OrderItemData> items, double totalPrice) {
+            return new ValidationResult(true, orderId, null, items, totalPrice);
         }
+
         public static ValidationResult failure(String errorMessage, List<OrderItemData> items) {
-            return new ValidationResult(false, null, errorMessage, items);
+            return new ValidationResult(false, null, errorMessage, items, 0.0);
         }
     }
 
     private final ActorRef<PersistenceActor.Command> persistenceActor;
 
     public static Behavior<Command> create(ActorRef<PersistenceActor.Command> persistenceActor) {
-        return Behaviors.setup(ctx -> new ValidationActor(ctx, persistenceActor));
+        return Behaviors.setup(context -> new ValidationActor(context, persistenceActor));
     }
 
-    private ValidationActor(ActorContext<Command> context, ActorRef<PersistenceActor.Command> persistenceActor) {
+    private ValidationActor(ActorContext<Command> context,
+                            ActorRef<PersistenceActor.Command> persistenceActor) {
         super(context);
         this.persistenceActor = persistenceActor;
     }
@@ -40,28 +52,35 @@ public class ValidationActor extends AbstractBehavior<ValidationActor.Command> {
     }
 
     private Behavior<Command> onValidate(ValidateOrder message) {
-        if (message.items == null || message.items.isEmpty()) {
-            message.replyTo.tell(ValidationResult.failure("Order must contain at least one item", List.of()));
-            return Behaviors.same();
+        String error = findValidationError(message.items());
+        if (error != null) {
+            message.replyTo().tell(ValidationResult.failure(error, message.items()));
+            return this;
         }
 
-        for (OrderItemData item : message.items) {
+        getContext().getLog().info(
+                "ValidationActor: validation passed for {} items, forwarding to persistence",
+                message.items().size());
+
+        persistenceActor.tell(new PersistenceActor.PersistOrder(message.items(), message.replyTo()));
+        return this;
+    }
+
+    private String findValidationError(List<OrderItemData> items) {
+        if (items == null || items.isEmpty()) {
+            return "Order must contain at least one item";
+        }
+        for (OrderItemData item : items) {
             if (item.productId() == null || item.productId().isBlank()) {
-                message.replyTo.tell(ValidationResult.failure("Product ID is required", message.items));
-                return Behaviors.same();
+                return "Product ID is required";
             }
             if (item.quantity() <= 0) {
-                message.replyTo.tell(ValidationResult.failure("Quantity must be > 0 for product " + item.productId(), message.items));
-                return Behaviors.same();
+                return "Quantity must be > 0 for product " + item.productId();
             }
             if (item.unitPrice() < 0) {
-                message.replyTo.tell(ValidationResult.failure("Unit price must not be negative for product " + item.productId(), message.items));
-                return Behaviors.same();
+                return "Unit price must not be negative for product " + item.productId();
             }
         }
-
-        getContext().getLog().info("ValidationActor: validation passed for {} items, forwarding to persistence", message.items.size());
-        persistenceActor.tell(new PersistenceActor.PersistOrder(message.items, message.replyTo));
-        return Behaviors.same();
+        return null;
     }
 }

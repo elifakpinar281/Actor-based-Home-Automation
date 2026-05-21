@@ -39,6 +39,7 @@ public class PersistenceActor extends EventSourcedBehavior<PersistenceActor.Comm
     ) {}
 
     public record OrderState(List<String> processedOrderIds) {
+
         public OrderState() {
             this(List.of());
         }
@@ -79,6 +80,7 @@ public class PersistenceActor extends EventSourcedBehavior<PersistenceActor.Comm
                 .build();
     }
 
+
     private Effect<OrderPersisted, OrderState> onPersistOrder(
             OrderState state, PersistOrder command) {
 
@@ -93,7 +95,7 @@ public class PersistenceActor extends EventSourcedBehavior<PersistenceActor.Comm
                     item.unitPrice()));
             rawTotal += item.quantity() * item.unitPrice();
         }
-        double totalPrice = Math.round(rawTotal * 100.0) / 100.0;
+        double totalPrice = roundToCents(rawTotal);
 
         OrderPersisted event = new OrderPersisted(orderId, eventItems, totalPrice);
 
@@ -104,8 +106,13 @@ public class PersistenceActor extends EventSourcedBehavior<PersistenceActor.Comm
                             "PersistenceActor: persisted order {} ({} items, total €{})",
                             orderId, command.items().size(), totalPrice);
                     command.replyTo().tell(
-                            ValidationActor.ValidationResult.success(orderId, command.items()));
+                            ValidationActor.ValidationResult.success(
+                                    orderId, command.items(), totalPrice));
                 });
+    }
+
+    private static double roundToCents(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     @Override

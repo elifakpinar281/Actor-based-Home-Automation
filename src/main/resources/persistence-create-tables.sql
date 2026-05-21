@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS event_journal (
-                                             ordering BIGINT AUTO_INCREMENT,
-                                             persistence_id VARCHAR(255) NOT NULL,
+    ordering BIGINT AUTO_INCREMENT,
+    persistence_id VARCHAR(255) NOT NULL,
     sequence_number BIGINT NOT NULL,
     deleted BOOLEAN DEFAULT FALSE NOT NULL,
     writer VARCHAR(255) NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS event_journal (
 CREATE UNIQUE INDEX IF NOT EXISTS event_journal_ordering_idx ON event_journal(ordering);
 
 CREATE TABLE IF NOT EXISTS snapshot (
-                                        persistence_id VARCHAR(255) NOT NULL,
+    persistence_id VARCHAR(255) NOT NULL,
     sequence_number BIGINT NOT NULL,
     created BIGINT NOT NULL,
     snapshot_ser_id INTEGER NOT NULL,
